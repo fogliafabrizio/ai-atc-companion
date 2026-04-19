@@ -27,7 +27,7 @@ Applicazione standalone (Windows/macOS) che affianca X-Plane 12 durante il volo 
 
 ```bash
 # Setup ambiente
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate        # macOS/Linux
 .venv\Scripts\activate           # Windows
 
@@ -35,13 +35,11 @@ source .venv/bin/activate        # macOS/Linux
 pip install -r requirements.txt
 
 # Avviare l'applicazione (da implementare)
-python3 src/main.py
+python src/main.py
 
 # Eseguire i test
-python3 -m pytest tests/
+python -m pytest tests/
 ```
-
-> **Importante:** usare sempre `python3`, mai `python`.
 
 ---
 
@@ -197,5 +195,10 @@ XPLANE_PATH=             # path cartella X-Plane 12 (per CIFP e .fms)
 - Formattazione: `black` + `isort`
 - Test: `pytest`, fixture in `tests/fixtures/`
 - Commit: conventional commits (`feat:`, `fix:`, `chore:`, `docs:`)
-- Branch: `feat/phase1-nome-componente`
-- Usare sempre `python3`, mai `python`
+- Branch: `feat/<id-univoco>` (es. `feat/20260419-udp-listener`) — sempre lavorare su un ramo di feature, mai direttamente su `master`
+- Usare sempre `python`, mai `python3`
+- Dopo ogni commit su un ramo `feat/`:
+  1. Eseguire i test (`python -m pytest tests/`) — il merge su `master` è consentito solo se tutti i test passano
+  2. Chiedere se si vuole fare il merge su `master`
+  3. Se sì: merge, push di `master`, poi creare subito un nuovo ramo `feat/<id-univoco>` per il lavoro successivo
+  4. Se no: push del ramo di feature corrente
