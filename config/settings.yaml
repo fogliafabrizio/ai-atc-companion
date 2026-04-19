@@ -1,2 +1,7 @@
 # AI ATC Companion — configurazione principale
 # Vedi .env.example per le variabili d'ambiente richieste
+
+# Ricezione dati da X-Plane 12 (Settings → Network → Data Output)
+# Deve essere una porta NON usata da X-Plane stesso (evitare 49000/49001).
+udp:
+  port: 49100

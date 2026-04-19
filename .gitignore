@@ -37,3 +37,9 @@ Thumbs.db
 # X-Plane runtime files
 *.fms
 *.acf
+
+# Claude
+settings.local.json
+
+# Local debug/scratch scripts
+src/debug_*.py
