@@ -1,8 +1,9 @@
 """
 UDP listener for X-Plane 12 legacy DATA packets.
 
-X-Plane 12 sends DATA packets on UDP port 49000 when configured via the
-"Settings → Data Output" screen. Each packet has the format:
+X-Plane 12 binds several ports in the 49000-range for its own use
+(49000, 49001, ...). Use a port well outside that range for data output;
+we default to 49100. Each DATA packet has the format:
 
     Header : b"DATA\\x00"  (5 bytes)
     Groups : N × 36 bytes
@@ -11,7 +12,10 @@ X-Plane 12 sends DATA packets on UDP port 49000 when configured via the
 
 DATA rows extracted here:
     Row  3 — speeds          : values[3] = ground speed (kts)
-    Row  4 — vertical speeds : values[1] = vertical speed (fpm)
+    Row  4 — Mach, VVI, G    : values[2] = vertical speed (fpm)
+                               (values[1] is the legacy VVI slot but reports a
+                               -999 sentinel in X-Plane 12 — verified empirically
+                               against MSL-derived climb rate)
     Row 20 — GPS position    : values[0] = latitude (deg)
                                values[1] = longitude (deg)
                                values[2] = altitude MSL (ft)
@@ -27,8 +31,8 @@ import time
 from dataclasses import dataclass, field
 
 
-_HEADER = b"DATA\x00"
-_HEADER_LEN = 5
+_HEADER_PREFIX = b"DATA"
+_HEADER_LEN = 5  # "DATA" + one separator byte (0x00 in legacy, 0x2A in X-Plane 12)
 _GROUP_FORMAT = "<i8f"  # 1 int32 + 8 float32, little-endian
 _GROUP_SIZE = struct.calcsize(_GROUP_FORMAT)  # == 36
 
@@ -63,7 +67,7 @@ def parse_data_packet(data: bytes) -> XPlaneState | None:
     Returns None if the packet does not begin with the expected DATA header
     or is otherwise malformed.
     """
-    if not data.startswith(_HEADER):
+    if not data.startswith(_HEADER_PREFIX) or len(data) < _HEADER_LEN:
         return None
 
     payload = data[_HEADER_LEN:]
@@ -81,7 +85,7 @@ def parse_data_packet(data: bytes) -> XPlaneState | None:
             state.altitude_msl_ft = values[2]
             state.altitude_agl_ft = values[3]
         elif row_index == _ROW_VSPEED:
-            state.vertical_speed_fpm = values[1]
+            state.vertical_speed_fpm = values[2]
         elif row_index == _ROW_SPEEDS:
             state.ground_speed_kts = values[3]
 
@@ -99,7 +103,7 @@ class UDPListener:
 
     Usage::
 
-        listener = UDPListener(port=49000)
+        listener = UDPListener(port=49100)
         listener.start()
         ...
         state = listener.get_state()
@@ -107,7 +111,7 @@ class UDPListener:
         listener.stop()
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 49000) -> None:
+    def __init__(self, host: str = "0.0.0.0", port: int = 49100) -> None:
         self._host = host
         self._port = port
         self._state: XPlaneState = XPlaneState()
@@ -170,10 +174,28 @@ class UDPListener:
             sock.close()
 
 
+def _load_port_from_settings(path: str = "config/settings.yaml") -> int | None:
+    """Return udp.port from the YAML config, or None if unavailable."""
+    try:
+        import yaml  # lazy import — only needed when run as script
+    except ImportError:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("udp", {}).get("port")
+    except FileNotFoundError:
+        return None
+
+
 if __name__ == "__main__":
     import sys
 
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 49000
+    # Precedence: CLI arg > settings.yaml > built-in default 49100
+    if len(sys.argv) > 1:
+        port = int(sys.argv[1])
+    else:
+        port = _load_port_from_settings() or 49100
     print(f"Listening for X-Plane DATA packets on UDP port {port} …")
     print("Press Ctrl-C to stop.\n")
 

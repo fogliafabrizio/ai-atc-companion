@@ -16,13 +16,16 @@ from src.udp_listener import (
     XPlaneState,
     _GROUP_FORMAT,
     _GROUP_SIZE,
-    _HEADER,
+    _HEADER_PREFIX,
     _ON_GROUND_AGL_FT,
     _ROW_GPS,
     _ROW_SPEEDS,
     _ROW_VSPEED,
     parse_data_packet,
 )
+
+# Full 5-byte header as emitted by X-Plane 12 (DATA + 0x2A separator).
+_HEADER = _HEADER_PREFIX + b"*"
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +74,8 @@ class TestParseDataPacket:
 
     def test_parses_vertical_speed_row(self) -> None:
         vspd = -500.0
-        pkt = _make_packet(_make_group(_ROW_VSPEED, 0.0, vspd))
+        # VS lives at values[2] in X-Plane 12 (row 4 / Mach, VVI, G)
+        pkt = _make_packet(_make_group(_ROW_VSPEED, 0.0, 0.0, vspd))
         s = parse_data_packet(pkt)
         assert s is not None
         assert s.vertical_speed_fpm == pytest.approx(vspd, rel=1e-5)
@@ -89,7 +93,7 @@ class TestParseDataPacket:
         gs = 145.0
         pkt = _make_packet(
             _make_group(_ROW_GPS, lat, lon, msl, agl),
-            _make_group(_ROW_VSPEED, 0.0, vspd),
+            _make_group(_ROW_VSPEED, 0.0, 0.0, vspd),
             _make_group(_ROW_SPEEDS, 0.0, 0.0, 0.0, gs),
         )
         s = parse_data_packet(pkt)
