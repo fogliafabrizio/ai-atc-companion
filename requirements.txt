@@ -4,3 +4,6 @@ faster-whisper
 pyyaml
 python-dotenv
 pytest
+sounddevice
+pynput
+numpy

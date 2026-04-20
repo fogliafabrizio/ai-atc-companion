@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/block_env_read.py",
+            "statusMessage": "Checking file access..."
+          }
+        ]
+      }
+    ]
+  }
+}
