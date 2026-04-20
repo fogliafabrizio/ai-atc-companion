@@ -13,3 +13,8 @@ audio:
   whisper_model_size: "medium" # tiny / base / small / medium
   sample_rate: 16000 # Hz — faster-whisper expects 16 kHz
   channels: 1
+
+controller:
+  mode: "mock"   # "mock" or "real" — set to "real" to enable the Claude-powered Clearance Delivery controller
+  icao: "LIML"   # departure airport ICAO code
+  runway: "36"   # active departure runway

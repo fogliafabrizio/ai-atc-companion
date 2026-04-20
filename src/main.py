@@ -1,6 +1,7 @@
 import signal
 import sys
 
+import anthropic
 import openai
 import yaml
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ from src.audio_pipeline import (
     WhisperSTT,
 )
 from src.controller_router import ControllerRouter
+from src.controllers.delivery import DeliveryContext, DeliveryController
 from src.session_manager import SessionManager
 from src.udp_listener import UDPListener
 
@@ -28,6 +30,7 @@ def main() -> None:
 
     udp_cfg = settings.get("udp", {})
     audio_cfg = settings.get("audio", {})
+    ctrl_cfg = settings.get("controller", {})
 
     config = AudioConfig(
         ptt_key=audio_cfg.get("ptt_key", "space"),
@@ -43,7 +46,21 @@ def main() -> None:
     session = SessionManager(udp_listener)
     session.start()
 
-    router = ControllerRouter()
+    ctrl_mode = ctrl_cfg.get("mode", "mock")
+    if ctrl_mode == "real":
+        delivery = DeliveryController(
+            client=anthropic.Anthropic(),
+            session=session,
+            context=DeliveryContext(
+                icao=ctrl_cfg.get("icao", "XXXX"),
+                active_runway=ctrl_cfg.get("runway", "00"),
+            ),
+        )
+        router = ControllerRouter(delivery_controller=delivery)
+        print(f"Controller mode: REAL — Clearance Delivery at {ctrl_cfg.get('icao', 'XXXX')} rwy {ctrl_cfg.get('runway', '00')}")
+    else:
+        router = ControllerRouter()
+        print("Controller mode: MOCK")
 
     # Instantiate WhisperSTT before entering the PTT loop so the model
     # download (if needed) happens at startup, not mid-transmission.

@@ -135,33 +135,33 @@ Each milestone is one `feat/YYYYMMDD-<slug>` branch. Mark each task `[x]` when m
 
 ### Current status (2026-04-20)
 
-Overall completion: **~5%** — only the UDP listener layer is functional.
+Overall completion: **~20%** — M1 complete, full audio pipeline functional.
 
 ---
 
-### M1 — Thin vertical slice (MVP pipeline)  ⬜ not started
+### M1 — Thin vertical slice (MVP pipeline)  ✅ done
 
 **Goal**: speak into the mic → hear a mock controller reply through headphones, while UDP state streams in the background. Validates the entire audio loop before any real ATC logic.
 
-- [ ] Add `sounddevice`, `pynput` (or `keyboard`), `numpy` to `requirements.txt`
-- [ ] Extend `config/settings.yaml` with `ptt_key`, `input_device`, `output_device`, `whisper_model_size`
-- [ ] `src/audio_pipeline.py` — PTT handler, mic capture, faster-whisper transcription, OpenAI TTS, playback
-- [ ] `src/session_manager.py` — `SessionManager` thread-safe store; polls `UDPListener.get_state()` at 2 Hz; holds `Transmission` log
-- [ ] `src/controller_router.py` — skeleton with a single `MockController` returning hardcoded replies
-- [ ] `src/main.py` — entry point: load config, start UDP listener, start session manager, register PTT, run event loop
-- [ ] `tests/test_session_manager.py` — state update + transmission log
-- [ ] `tests/test_controller_router.py` — mock controller routing by frequency
-- [ ] Manual verification against X-Plane 12: PTT → mock reply audible
+- [x] Add `sounddevice`, `pynput` (or `keyboard`), `numpy` to `requirements.txt`
+- [x] Extend `config/settings.yaml` with `ptt_key`, `input_device`, `output_device`, `whisper_model_size`
+- [x] `src/audio_pipeline.py` — PTT handler, mic capture, faster-whisper transcription, OpenAI TTS, playback
+- [x] `src/session_manager.py` — `SessionManager` thread-safe store; polls `UDPListener.get_state()` at 2 Hz; holds `Transmission` log
+- [x] `src/controller_router.py` — skeleton with a single `MockController` returning hardcoded replies
+- [x] `src/main.py` — entry point: load config, start UDP listener, start session manager, register PTT, run event loop
+- [x] `tests/test_session_manager.py` — state update + transmission log
+- [x] `tests/test_controller_router.py` — mock controller routing by frequency
+- [x] Manual verification against X-Plane 12: PTT → mock reply audible
 
 ---
 
-### M2 — First real controller: Clearance Delivery  ⬜ not started
+### M2 — First real controller: Clearance Delivery  ✅ done
 
-- [ ] `skills/controller_prompt.md` — template for system prompt generation (role, ICAO, runway, METAR, session state)
-- [ ] `src/controllers/delivery.py` — Claude API call with `claude-sonnet`, builds prompt from skill + session
-- [ ] Update `src/controller_router.py` — route by frequency; `MockController` stays as fallback
-- [ ] CLI flag or config to toggle mock vs. real controller
-- [ ] `tests/test_delivery_controller.py` — assert response shape; record/replay if needed
+- [x] `skills/controller_prompt.md` — template for system prompt generation (role, ICAO, runway, METAR, session state)
+- [x] `src/controllers/delivery.py` — Claude API call with `claude-sonnet`, builds prompt from skill + session
+- [x] Update `src/controller_router.py` — route by frequency; `MockController` stays as fallback
+- [x] CLI flag or config to toggle mock vs. real controller
+- [x] `tests/test_delivery_controller.py` — assert response shape; record/replay if needed
 - [ ] End-to-end: request IFR clearance, verify coherent SID / squawk / QNH
 
 ---
