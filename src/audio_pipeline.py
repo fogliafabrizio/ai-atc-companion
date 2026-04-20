@@ -86,27 +86,71 @@ class AudioPipeline:
         self._router = controller_router
         self._session = session_manager
         self._ptt_active = threading.Event()
-        self._ptt_key = self._parse_ptt_key(config.ptt_key)
+        self._processing = threading.Event()
+        self._ptt_modifiers, self._ptt_trigger = self._parse_ptt_key(config.ptt_key)
+        self._held_keys: set[object] = set()
         self._recording_buffer: list[np.ndarray] = []
         self._record_stream: object | None = None
 
-    def _parse_ptt_key(self, key_str: str) -> object:
+    def _parse_ptt_key(self, key_str: str) -> tuple[set[object], object]:
+        """Parse a key string into (modifier_set, trigger_key).
+
+        Supports combo syntax: "ctrl+space" → ({Key.ctrl_l, Key.ctrl_r}, Key.space)
+        Single key: "space" → (set(), Key.space)
+        """
         import pynput.keyboard as kb
 
-        try:
-            return kb.Key[key_str]
-        except KeyError:
-            return kb.KeyCode.from_char(key_str[0])
+        parts = [p.strip() for p in key_str.lower().split("+")]
+        trigger_str = parts[-1]
+        modifier_strs = parts[:-1]
+
+        def _parse_single(s: str) -> object:
+            try:
+                return kb.Key[s]
+            except KeyError:
+                return kb.KeyCode.from_char(s[0])
+
+        modifiers: set[object] = set()
+        for mod in modifier_strs:
+            if mod in ("ctrl", "control"):
+                modifiers.add(kb.Key.ctrl_l)
+                modifiers.add(kb.Key.ctrl_r)
+            elif mod in ("shift",):
+                modifiers.add(kb.Key.shift)
+                modifiers.add(kb.Key.shift_r)
+            elif mod in ("alt",):
+                modifiers.add(kb.Key.alt)
+                modifiers.add(kb.Key.alt_r)
+            else:
+                modifiers.add(_parse_single(mod))
+
+        trigger = _parse_single(trigger_str)
+        return modifiers, trigger
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info: object, status: object) -> None:
         self._recording_buffer.append(indata.copy())
 
+    def _modifiers_active(self) -> bool:
+        if not self._ptt_modifiers:
+            return True
+        return bool(self._held_keys & self._ptt_modifiers)
+
     def _on_press(self, key: object) -> None:
         import sounddevice as sd
 
-        if key == self._ptt_key and not self._ptt_active.is_set():
-            self._ptt_active.set()
-            self._recording_buffer.clear()
+        self._held_keys.add(key)
+
+        if key != self._ptt_trigger or self._ptt_active.is_set():
+            return
+        if not self._modifiers_active():
+            return
+        if self._processing.is_set():
+            print("[WARN] ATC is busy — wait for the response before transmitting.")
+            return
+        self._ptt_active.set()
+        self._recording_buffer.clear()
+        print("Recording...")
+        try:
             self._record_stream = sd.InputStream(
                 samplerate=self._config.sample_rate,
                 channels=self._config.channels,
@@ -115,9 +159,14 @@ class AudioPipeline:
                 callback=self._audio_callback,
             )
             self._record_stream.start()
+        except Exception as exc:
+            print(f"[ERROR] Recording failed: {exc}")
+            self._ptt_active.clear()
 
     def _on_release(self, key: object) -> None:
-        if key == self._ptt_key and self._ptt_active.is_set():
+        self._held_keys.discard(key)
+
+        if key == self._ptt_trigger and self._ptt_active.is_set():
             self._ptt_active.clear()
             if self._record_stream is not None:
                 self._record_stream.stop()
@@ -125,18 +174,34 @@ class AudioPipeline:
                 self._record_stream = None
             if self._recording_buffer:
                 audio = np.concatenate(self._recording_buffer, axis=0).flatten()
-                self._process_transmission(audio)
+                threading.Thread(target=self._process_transmission, args=(audio,), daemon=True).start()
 
     def _process_transmission(self, audio: np.ndarray) -> None:
-        text = self._stt.transcribe(audio, self._config.sample_rate)
-        if not text.strip():
-            return
-        print(f"[PILOT] {text}")
-        self._session.add_transmission("pilot", text)
-        reply = self._router.route_transmission(text)
-        print(f"[ATC]   {reply}")
-        self._session.add_transmission("atc", reply)
-        audio_bytes = self._tts.synthesize(reply)
+        self._processing.set()
+        try:
+            print("Transcribing...")
+            text = self._stt.transcribe(audio, self._config.sample_rate)
+            if not text.strip():
+                return
+            print(f"[PILOT] {text}")
+            self._session.add_transmission("pilot", text)
+            reply = self._router.route_transmission(text)
+            if reply is None:
+                return
+            print(f"[ATC]   {reply}")
+            self._session.add_transmission("atc", reply)
+            audio_bytes = self._tts.synthesize(reply)
+            self._output.play(audio_bytes, _OPENAI_PCM_RATE)
+        finally:
+            self._processing.clear()
+
+    def is_busy(self) -> bool:
+        return self._processing.is_set() or self._ptt_active.is_set()
+
+    def synthesize(self, text: str) -> bytes:
+        return self._tts.synthesize(text)
+
+    def play_atc(self, audio_bytes: bytes) -> None:
         self._output.play(audio_bytes, _OPENAI_PCM_RATE)
 
     def run(self) -> None:

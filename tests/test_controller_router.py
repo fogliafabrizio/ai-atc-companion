@@ -26,7 +26,9 @@ def _make_session(freq: float) -> MagicMock:
     m.get_flight_plan.return_value = None
     m.get_transmissions.return_value = []
     m.get_udp_state.return_value = XPlaneState()
-    m.get_pilot_info.return_value = {"callsign": "", "company": ""}
+    m.get_pilot_info.return_value = {"callsign": "", "company": "", "parking_stand": ""}
+    m.get_active_runway.return_value = ""
+    m.get_metar.return_value = ""
     return m
 
 
@@ -38,7 +40,7 @@ def _make_mock_client() -> MagicMock:
 
 def _make_skill(tmp_path, name: str = "prompt.md") -> str:
     skill = tmp_path / name
-    skill.write_text("{{ICAO}} {{RUNWAY}} {{UDP_STATE}} {{TRANSMISSION_HISTORY}} {{FLIGHT_PHASE}}")
+    skill.write_text("{{ICAO}} {{FILED_RUNWAY}} {{ACTIVE_RUNWAY}} {{FREQ_MAP}} {{METAR}} {{UDP_STATE}} {{TRANSMISSION_HISTORY}} {{FLIGHT_PHASE}}")
     return str(skill)
 
 

@@ -37,7 +37,7 @@ def mock_client() -> MagicMock:
 def delivery(mock_client: MagicMock, session: SessionManager, tmp_path) -> DeliveryController:
     skill_file = tmp_path / "controller_prompt.md"
     skill_file.write_text(
-        "Role: {{ICAO}} rwy {{RUNWAY}}\nState: {{UDP_STATE}}\nHistory: {{TRANSMISSION_HISTORY}}"
+        "Role: {{ICAO}} rwy {{FILED_RUNWAY}} active={{ACTIVE_RUNWAY}}\nState: {{UDP_STATE}}\nHistory: {{TRANSMISSION_HISTORY}}"
     )
     return DeliveryController(
         client=mock_client,

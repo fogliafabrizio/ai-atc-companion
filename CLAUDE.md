@@ -118,7 +118,13 @@ Routes every pilot transmission to the correct controller based on the **live CO
 
 Frequency→role mapping is loaded at startup from `apt.dat` for the departure/arrival ICAO. Fallback: `MockController` for any unrecognised frequency.
 
+The `freq_map` is forwarded to every controller at construction and injected as `{{FREQ_MAP}}` into their system prompts so they always use the correct airport-specific frequencies in handoff instructions.
+
 Each controller is a Claude agent with a dedicated system prompt.
+
+### Proactive ATC Monitor
+
+`src/proactive_monitor.py` — `ProactiveATCMonitor` runs as a background daemon thread (1 Hz). It detects flight-phase transitions (e.g. TAXI→TAKEOFF, TAKEOFF→CLIMB, LANDING→TAXI) and calls the active controller's `generate_proactive(context)` method to produce an unsolicited ATC transmission without requiring a PTT press. Each transition fires at most once per flight. Can be disabled via `audio.proactive_enabled: false` in `settings.yaml`.
 
 ### Audio Pipeline
 
@@ -144,7 +150,7 @@ Each milestone is one `feat/YYYYMMDD-<slug>` branch. Mark each task `[x]` when m
 
 ### Current status (2026-04-20)
 
-Overall completion: **~65%** — M1, M2, M3, and M4 complete.
+Overall completion: **~70%** — M1, M2, M3, M4, and M4.5 complete.
 
 ---
 
@@ -230,6 +236,18 @@ At startup `ControllerRouter` calls `AptDatReader.get_frequencies(icao)` to buil
 #### Phase-driven proactive handoff (secondary)
 - [x] Phase inference from UDP state (on_ground + GS + AGL → taxi/takeoff/climb/cruise/descent/approach) — `src/flight_phase.py`
 - [x] Proactive handoff hints in TTS: `{{FLIGHT_PHASE}}` injected into every controller system prompt; each skill file instructs the controller to append "Contact [next role] on [freq]" at jurisdictional boundaries
+
+---
+
+### M4.5 — Controller accuracy & proactive ATC  ✅ done
+
+Fixes five issues found during first real flights at LIML.
+
+- [x] **Fix 1 — Correct handoff frequencies**: `freq_map` (from apt.dat) is now passed to all controllers and injected as `{{FREQ_MAP}}` into every skill template. Controllers must use only frequencies in this map when instructing the pilot to change frequency.
+- [x] **Fix 2 — Parking stand for realistic taxi routing**: `pilot.parking_stand` added to `config/settings.yaml` and `SessionManager`. Ground prompt receives `{{PARKING_STAND}}` and instructs Claude to produce a taxi route from that stand to the holding point.
+- [x] **Fix 3 — Active runway from METAR, not FMS**: renamed `{{RUNWAY}}` → `{{FILED_RUNWAY}}` (FMS reference only) in all skill templates; added `{{ACTIVE_RUNWAY}}` (set by Delivery after clearance) and `{{METAR}}`; controllers determine the active runway from wind, not the filed plan.
+- [x] **Fix 4 — Proactive ATC transmissions**: `src/proactive_monitor.py` — `ProactiveATCMonitor` background thread detects flight-phase transitions and calls `controller.generate_proactive(context)` to produce unsolicited ATC speech (takeoff clearance, handoff to departure, handoff to en-route, landing clearance, handoff to ground). Controlled by `audio.proactive_enabled` in `settings.yaml`.
+- [x] **Fix 5 — PTT combo key**: `_parse_ptt_key()` now supports `"ctrl+space"`, `"alt+v"`, etc. Default changed to `ctrl+space`.
 
 ---
 

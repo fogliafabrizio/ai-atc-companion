@@ -17,10 +17,12 @@ class BaseController(ABC):
         session: SessionManager,
         skill_path: str,
         model: str = _MODEL,
+        freq_map: dict[float, str] | None = None,
     ) -> None:
         self._client = client
         self._session = session
         self._model = model
+        self._freq_map_str = _format_freq_map(freq_map or {})
         with open(skill_path, "r", encoding="utf-8") as f:
             self._skill_template = f.read()
 
@@ -37,6 +39,8 @@ class BaseController(ABC):
         pilot_str = _format_pilot_info(self._session.get_pilot_info())
         fp_str = _format_flight_plan(self._session.get_flight_plan())
         phase_str = infer_phase(udp_state).value
+        active_runway = self._session.get_active_runway()
+        metar = self._session.get_metar() or "(not available)"
 
         system_prompt = self._build_system_prompt(
             template=self._skill_template,
@@ -45,6 +49,9 @@ class BaseController(ABC):
             udp_state=udp_state,
             history_lines=history_lines,
             phase_str=phase_str,
+            freq_map_str=self._freq_map_str,
+            active_runway=active_runway,
+            metar=metar,
         )
 
         messages = [
@@ -68,6 +75,53 @@ class BaseController(ABC):
         )
         return response.content[0].text
 
+    def generate_proactive(self, context: str) -> str | None:
+        """Call Claude to produce an unsolicited ATC transmission.
+
+        Returns None if the controller decides no action is warranted.
+        """
+        from src.flight_phase import infer_phase
+
+        udp_state = self._session.get_udp_state()
+        transmissions = self._session.get_transmissions()
+        history_lines = "\n".join(
+            f"[{t.role.upper()}] {t.text}" for t in transmissions
+        ) or "(none)"
+        pilot_str = _format_pilot_info(self._session.get_pilot_info())
+        fp_str = _format_flight_plan(self._session.get_flight_plan())
+        phase_str = infer_phase(udp_state).value
+        active_runway = self._session.get_active_runway()
+        metar = self._session.get_metar() or "(not available)"
+
+        system_prompt = self._build_system_prompt(
+            template=self._skill_template,
+            pilot_str=pilot_str,
+            fp_str=fp_str,
+            udp_state=udp_state,
+            history_lines=history_lines,
+            phase_str=phase_str,
+            freq_map_str=self._freq_map_str,
+            active_runway=active_runway,
+            metar=metar,
+        )
+
+        proactive_instruction = (
+            "PROACTIVE TRANSMISSION REQUIRED. "
+            "Do NOT wait for the pilot to speak. "
+            "Issue a single, concise ATC transmission appropriate to the current situation. "
+            "If no transmission is warranted right now, reply with exactly the word: STANDBY"
+        )
+        messages = [{"role": "user", "content": f"{proactive_instruction}\n\nSituation: {context}"}]
+
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=256,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+            messages=messages,
+        )
+        reply = response.content[0].text.strip()
+        return None if reply.upper() == "STANDBY" else reply
+
     @abstractmethod
     def _build_system_prompt(
         self,
@@ -77,7 +131,16 @@ class BaseController(ABC):
         udp_state: object,
         history_lines: str,
         phase_str: str,
+        freq_map_str: str,
+        active_runway: str,
+        metar: str,
     ) -> str: ...
+
+
+def _format_freq_map(freq_map: dict[float, str]) -> str:
+    if not freq_map:
+        return "(not available)"
+    return ", ".join(f"{role}: {freq:.3f}" for freq, role in sorted(freq_map.items()))
 
 
 def _format_pilot_info(info: dict[str, str]) -> str:

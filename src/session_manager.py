@@ -62,6 +62,7 @@ class SessionManager:
         poll_interval: float = 0.5,
         pilot_callsign: str = "",
         pilot_company: str = "",
+        parking_stand: str = "",
     ) -> None:
         self._udp = udp_listener
         self._poll_interval = poll_interval
@@ -73,7 +74,10 @@ class SessionManager:
         self._flight_plan: FlightPlan | None = None
         self._pilot_callsign = pilot_callsign
         self._pilot_company = pilot_company or _resolve_company(pilot_callsign)
+        self._parking_stand = parking_stand
         self._active_frequency_mhz: float = 0.0
+        self._active_runway: str = ""
+        self._metar: str = ""
         self._events: list[SessionEvent] = []
 
     def start(self) -> None:
@@ -110,7 +114,27 @@ class SessionManager:
 
     def get_pilot_info(self) -> dict[str, str]:
         with self._lock:
-            return {"callsign": self._pilot_callsign, "company": self._pilot_company}
+            return {
+                "callsign": self._pilot_callsign,
+                "company": self._pilot_company,
+                "parking_stand": self._parking_stand,
+            }
+
+    def set_active_runway(self, runway: str) -> None:
+        with self._lock:
+            self._active_runway = runway
+
+    def get_active_runway(self) -> str:
+        with self._lock:
+            return self._active_runway
+
+    def set_metar(self, metar: str) -> None:
+        with self._lock:
+            self._metar = metar
+
+    def get_metar(self) -> str:
+        with self._lock:
+            return self._metar
 
     @property
     def active_frequency_mhz(self) -> float:
