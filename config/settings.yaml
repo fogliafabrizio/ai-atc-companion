@@ -7,9 +7,14 @@ udp:
   port: 49100
 
 audio:
-  ptt_key: "space" # pynput Key name (e.g. space, ctrl) or single char (e.g. v)
+  ptt_key: "f12" # pynput Key name (e.g. space, ctrl) or single char (e.g. v)
   input_device: null # null = system default; or device name substring
   output_device: null
-  whisper_model_size: "medium" # tiny / base / small / medium
+  whisper_model_size: "large-v3" # tiny / base / small / medium / large-v3
   sample_rate: 16000 # Hz — faster-whisper expects 16 kHz
   channels: 1
+
+controller:
+  mode: "real" # "mock" or "real" — set to "real" to enable the Claude-powered Clearance Delivery controller
+  icao: "LIML" # departure airport ICAO code
+  runway: "36" # active departure runway
