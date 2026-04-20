@@ -17,7 +17,7 @@ Standalone application (Windows/macOS) that runs alongside X-Plane 12 during IFR
 | STT              | faster-whisper (local, no internet)                   |
 | AI / ATC         | Claude API — claude-sonnet, one agent per controller  |
 | TTS              | OpenAI TTS with VHF audio filter                      |
-| Navigation data  | X-Plane 12 CIFP folder (ARINC 424)                    |
+| Navigation data  | X-Plane 12 CIFP folder (ARINC 424) + `apt.dat`        |
 | Flight plan      | `.fms` file exported from X-Plane 12                  |
 | Configuration    | YAML + environment variables (`.env`)                 |
 
@@ -68,12 +68,13 @@ ai-atc-companion/
 │
 ├── src/
 │   ├── main.py                # application entry point
-│   ├── udp_listener.py        # reads datarefs from X-Plane 12 via UDP
+│   ├── udp_listener.py        # reads datarefs from X-Plane 12 via UDP (DATA + RREF)
 │   ├── session_manager.py     # global session state (squawk, taxi route, flight phase)
 │   ├── controller_router.py   # routes transmissions to the correct controller
 │   ├── audio_pipeline.py      # PTT → Whisper → Claude API → TTS → output
 │   ├── controllers/           # one module per ATC role (delivery, ground, tower, …)
 │   ├── cifp_parser.py         # ARINC 424 parser for SID/STAR
+│   ├── apt_dat_reader.py      # apt.dat parser — extracts COM frequencies per ICAO
 │   └── fms_reader.py          # .fms file reader
 │
 ├── config/
@@ -101,7 +102,11 @@ ai-atc-companion/
 
 ### UDP Listener
 
-Reads X-Plane 12 datarefs in real time (GPS position, altitude, vertical speed, on-ground/in-flight state, active runway). Updates internal state every cycle and triggers controller changes during critical phases (e.g. TOD for descent start).
+Reads X-Plane 12 datarefs in real time via two protocols:
+- **DATA** packets (legacy, port 49100): GPS position, altitude, vertical speed, ground speed, on-ground state.
+- **RREF** subscriptions (port 49000 → response on a secondary port): `sim/cockpit/radios/com1_freq_hz` — the active COM1 frequency as an integer (Hz×100, e.g. `12180` = 121.80 MHz). Polled at 2 Hz; any change is surfaced in `XPlaneState.com1_freq_mhz`.
+
+Updates internal state every cycle and triggers controller changes during critical phases (e.g. TOD for descent start).
 
 ### Session Manager
 
@@ -109,7 +114,11 @@ Maintains the global session state: current flight phase, active controller, rec
 
 ### Controller Router
 
-Routes every pilot transmission to the correct controller based on the selected frequency and the flight phase. Each controller is a Claude agent with a dedicated system prompt.
+Routes every pilot transmission to the correct controller based on the **live COM1 frequency read from X-Plane** and the flight phase. When the pilot tunes a new frequency in the sim, the router automatically activates the matching controller — no manual selection needed.
+
+Frequency→role mapping is loaded at startup from `apt.dat` for the departure/arrival ICAO. Fallback: `MockController` for any unrecognised frequency.
+
+Each controller is a Claude agent with a dedicated system prompt.
 
 ### Audio Pipeline
 
@@ -135,7 +144,7 @@ Each milestone is one `feat/YYYYMMDD-<slug>` branch. Mark each task `[x]` when m
 
 ### Current status (2026-04-20)
 
-Overall completion: **~35%** — M1 and M2 complete, Clearance Delivery live with Claude API.
+Overall completion: **~50%** — M1, M2, and M3 complete.
 
 ---
 
@@ -178,25 +187,49 @@ Design:
 
 ---
 
-### M3 — Flight plan & navigation data  ⬜ not started
+### M3 — Flight plan, navigation data & live frequency routing  ✅ done
 
-- [ ] `src/fms_reader.py` + `skills/fms_parser.md` — parse `.fms` → departure/arrival/route/aircraft/cruise FL
-- [ ] `src/cifp_parser.py` + `skills/cifp_parser.md` — parse ARINC 424 SID/STAR for a given ICAO
-- [ ] Sample `.fms` and CIFP fixtures in `tests/fixtures/`
-- [ ] `tests/test_fms_reader.py`, `tests/test_cifp_parser.py`
-- [ ] Session manager loads active flight plan at startup; controller prompts include it
+#### Flight plan & procedures
+- [x] `src/fms_reader.py` + `skills/fms_parser.md` — parse `.fms` → departure/arrival/route/aircraft/cruise FL
+- [x] `src/cifp_parser.py` + `skills/cifp_parser.md` — parse ARINC 424 SID/STAR for a given ICAO
+- [x] Sample `.fms` and CIFP fixtures in `tests/fixtures/`
+- [x] `tests/test_fms_reader.py`, `tests/test_cifp_parser.py`
+- [x] Session manager loads active flight plan at startup; controller prompts include it
+
+#### apt.dat — airport communication frequencies
+- [x] `src/apt_dat_reader.py` — parse `<XPLANE_PATH>/Resources/default scenery/default apt dat/Earth nav data/apt.dat`; extract COM frequencies for a given ICAO using row codes: 50 ATIS, 52 Delivery, 53 Ground, 54 Tower, 55 Approach, 56 Departure
+- [x] Return a `dict[float, str]` mapping frequency (MHz) → role name (e.g. `{121.8: "delivery", 121.9: "ground", ...}`)
+- [x] Add `xplane.root` to `config/settings.yaml` (the X-Plane 12 root folder, not the CIFP subfolder)
+- [x] `tests/test_apt_dat_reader.py` with a trimmed fixture file in `tests/fixtures/`
+
+#### RREF — live COM1 frequency from X-Plane
+- [x] Extend `UDPListener` with an RREF subscriber: on start, send a subscription packet to X-Plane port 49000 for dataref `sim/cockpit/radios/com1_freq_hz`; receive RREF response packets on a configurable port (default 49101)
+- [x] Add `com1_freq_mhz: float` to `XPlaneState`; update `get_state()` to expose it
+- [x] `SessionManager` tracks `active_frequency_mhz` and detects changes at 2 Hz
+- [x] `tests/test_udp_listener.py` — add RREF packet parsing tests
 
 ---
 
-### M4 — Remaining controllers + phase-driven routing  ⬜ not started
+### M4 — Remaining controllers + live frequency routing  ⬜ not started
 
+#### New controllers
 - [ ] `src/controllers/ground.py`
 - [ ] `src/controllers/tower.py`
 - [ ] `src/controllers/departure.py`
 - [ ] `src/controllers/approach.py`
-- [ ] Phase inference in `controller_router.py` from UDP state (on_ground + GS + AGL → taxi/takeoff/climb/cruise/descent/approach)
-- [ ] Proactive handoff triggers (TOD detection, runway-in-sight cue)
 - [ ] Smoke test per controller with canned session state
+
+#### Live frequency-driven routing (the core of this milestone)
+At startup `ControllerRouter` calls `AptDatReader.get_frequencies(icao)` to build a frequency→controller map for the departure airport (and arrival airport once loaded from the FMS). On every PTT press the router reads `SessionManager.active_frequency_mhz` (sourced from RREF COM1) and activates the matching controller.
+
+- [ ] `ControllerRouter` loads the frequency map from `AptDatReader` at startup
+- [ ] `ControllerRouter.route_transmission()` uses live `com1_freq_mhz` instead of a manually passed parameter
+- [ ] Frequency change detected by `SessionManager` is logged as a session event ("tuned 118.70 → Tower")
+- [ ] `tests/test_controller_router.py` — verify correct controller activated for each frequency in the map
+
+#### Phase-driven proactive handoff (secondary)
+- [ ] Phase inference from UDP state (on_ground + GS + AGL → taxi/takeoff/climb/cruise/descent/approach)
+- [ ] Proactive handoff hints in TTS: controller tells pilot "contact Tower on 118.70" so pilot knows which freq to tune
 
 ---
 

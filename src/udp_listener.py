@@ -1,5 +1,5 @@
 """
-UDP listener for X-Plane 12 legacy DATA packets.
+UDP listener for X-Plane 12 legacy DATA packets and RREF subscriptions.
 
 X-Plane 12 binds several ports in the 49000-range for its own use
 (49000, 49001, ...). Use a port well outside that range for data output;
@@ -20,6 +20,11 @@ DATA rows extracted here:
                                values[1] = longitude (deg)
                                values[2] = altitude MSL (ft)
                                values[3] = altitude AGL (ft)
+
+RREF subscription (port 49000 → responses on port 49101):
+    Dataref sim/cockpit/radios/com1_freq_hz — active COM1 frequency as an
+    integer (Hz×100, e.g. 12180 = 121.80 MHz). Polled at 2 Hz; any change
+    is surfaced in XPlaneState.com1_freq_mhz.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ import socket
 import struct
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 _HEADER_PREFIX = b"DATA"
@@ -41,14 +46,21 @@ _ROW_VSPEED = 4
 _ROW_GPS = 20
 
 # Aircraft is considered on the ground when AGL is below this threshold.
-# NOTE: This is a heuristic — X-Plane's dedicated on-ground flag requires the
-# newer RREF protocol. 20 ft covers normal touchdown plus shallow final flare.
 _ON_GROUND_AGL_FT = 20.0
+
+_RREF_SEND_PORT = 49000
+_RREF_RECV_PORT = 49101
+_RREF_COM1_DATAREF = b"sim/cockpit/radios/com1_freq_hz"
+_RREF_COM1_INDEX = 0
+_RREF_POLL_HZ = 2
+_RREF_HEADER = b"RREF,"  # comma — response header differs from subscribe header
+_RREF_RECORD_FORMAT = "<if"
+_RREF_RECORD_SIZE = struct.calcsize(_RREF_RECORD_FORMAT)  # 8
 
 
 @dataclass
 class XPlaneState:
-    """Snapshot of X-Plane flight state parsed from a single DATA packet."""
+    """Snapshot of X-Plane flight state parsed from DATA and RREF packets."""
 
     timestamp: float = field(default_factory=time.time)
     latitude: float = 0.0
@@ -58,6 +70,7 @@ class XPlaneState:
     vertical_speed_fpm: float = 0.0
     ground_speed_kts: float = 0.0
     on_ground: bool = False
+    com1_freq_mhz: float = 0.0
 
 
 def parse_data_packet(data: bytes) -> XPlaneState | None:
@@ -89,17 +102,40 @@ def parse_data_packet(data: bytes) -> XPlaneState | None:
         elif row_index == _ROW_SPEEDS:
             state.ground_speed_kts = values[3]
 
-    # Derive on_ground heuristically from AGL altitude.
-    # See module docstring for caveats.
     state.on_ground = state.altitude_agl_ft < _ON_GROUND_AGL_FT
 
     return state
 
 
+def parse_rref_packet(data: bytes) -> dict[int, float]:
+    """
+    Parse one X-Plane RREF response packet.
+
+    Returns a dict mapping dataref index → raw float value.
+    Returns {} if the header is wrong or the packet is empty.
+    Trailing bytes that don't form a complete record are ignored.
+    """
+    if not data.startswith(_RREF_HEADER):
+        return {}
+    payload = data[len(_RREF_HEADER):]
+    n = len(payload) // _RREF_RECORD_SIZE
+    result: dict[int, float] = {}
+    for i in range(n):
+        chunk = payload[i * _RREF_RECORD_SIZE : (i + 1) * _RREF_RECORD_SIZE]
+        idx, val = struct.unpack(_RREF_RECORD_FORMAT, chunk)
+        result[idx] = val
+    return result
+
+
 class UDPListener:
     """
-    Background thread that listens for X-Plane DATA packets on a UDP port
-    and keeps the most-recent XPlaneState available for thread-safe reads.
+    Background threads that listen for X-Plane packets and keep the most-recent
+    XPlaneState available for thread-safe reads.
+
+    - DATA thread: binds `port` (default 49100), parses legacy DATA packets.
+    - RREF thread: sends a COM1 subscription to X-Plane port 49000 at startup,
+      then listens on `rref_port` (default 49101) for RREF responses and updates
+      XPlaneState.com1_freq_mhz. Silently degrades when X-Plane is not running.
 
     Usage::
 
@@ -111,18 +147,27 @@ class UDPListener:
         listener.stop()
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 49100) -> None:
+    def __init__(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 49100,
+        xplane_host: str = "127.0.0.1",
+        rref_port: int = _RREF_RECV_PORT,
+    ) -> None:
         self._host = host
         self._port = port
+        self._xplane_host = xplane_host
+        self._rref_port = rref_port
         self._state: XPlaneState = XPlaneState()
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._rref_thread: threading.Thread | None = None
 
     def start(self) -> None:
-        """Start the background listener thread."""
+        """Start the DATA and RREF background listener threads."""
         if self._thread is not None and self._thread.is_alive():
-            return  # already running
+            return
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._run,
@@ -130,34 +175,33 @@ class UDPListener:
             daemon=True,
         )
         self._thread.start()
+        self._rref_thread = threading.Thread(
+            target=self._run_rref,
+            name="rref-listener",
+            daemon=True,
+        )
+        self._rref_thread.start()
 
     def stop(self, timeout: float = 2.0) -> None:
-        """Signal the listener to stop and wait for the thread to exit."""
+        """Signal both listeners to stop and wait for threads to exit."""
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=timeout)
             self._thread = None
+        if self._rref_thread is not None:
+            self._rref_thread.join(timeout=timeout)
+            self._rref_thread = None
 
     def get_state(self) -> XPlaneState:
         """Return the most-recent XPlaneState (thread-safe copy)."""
         with self._lock:
-            s = self._state
-            return XPlaneState(
-                timestamp=s.timestamp,
-                latitude=s.latitude,
-                longitude=s.longitude,
-                altitude_msl_ft=s.altitude_msl_ft,
-                altitude_agl_ft=s.altitude_agl_ft,
-                vertical_speed_fpm=s.vertical_speed_fpm,
-                ground_speed_kts=s.ground_speed_kts,
-                on_ground=s.on_ground,
-            )
+            return replace(self._state)
 
     def _run(self) -> None:
-        """Main loop: bind the socket and process incoming packets."""
+        """Main DATA loop: bind the socket and process incoming packets."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.settimeout(1.0)  # allows stop_event to be checked each second
+        sock.settimeout(1.0)
         try:
             sock.bind((self._host, self._port))
             while not self._stop_event.is_set():
@@ -169,7 +213,47 @@ class UDPListener:
                 if parsed is not None:
                     parsed.timestamp = time.time()
                     with self._lock:
-                        self._state = parsed
+                        self._state = replace(self._state,
+                            timestamp=parsed.timestamp,
+                            latitude=parsed.latitude,
+                            longitude=parsed.longitude,
+                            altitude_msl_ft=parsed.altitude_msl_ft,
+                            altitude_agl_ft=parsed.altitude_agl_ft,
+                            vertical_speed_fpm=parsed.vertical_speed_fpm,
+                            ground_speed_kts=parsed.ground_speed_kts,
+                            on_ground=parsed.on_ground,
+                        )
+        finally:
+            sock.close()
+
+    def _run_rref(self) -> None:
+        """RREF loop: subscribe to COM1 freq and update state on each response."""
+        sub_pkt = (
+            b"RREF\x00"
+            + struct.pack("<ii", _RREF_POLL_HZ, _RREF_COM1_INDEX)
+            + _RREF_COM1_DATAREF.ljust(400, b"\x00")
+        )
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(1.0)
+        try:
+            sock.bind((self._host, self._rref_port))
+            try:
+                sock.sendto(sub_pkt, (self._xplane_host, _RREF_SEND_PORT))
+            except OSError:
+                pass  # X-Plane not running; still enter receive loop
+            while not self._stop_event.is_set():
+                try:
+                    data, _ = sock.recvfrom(65535)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                records = parse_rref_packet(data)
+                freq_raw = records.get(_RREF_COM1_INDEX)
+                if freq_raw is not None and freq_raw > 0:
+                    with self._lock:
+                        self._state = replace(self._state, com1_freq_mhz=freq_raw / 100.0)
         finally:
             sock.close()
 
@@ -209,7 +293,7 @@ if __name__ == "__main__":
                 f"lat={s.latitude:.6f}  lon={s.longitude:.6f}  "
                 f"MSL={s.altitude_msl_ft:.0f} ft  AGL={s.altitude_agl_ft:.0f} ft  "
                 f"VS={s.vertical_speed_fpm:.0f} fpm  GS={s.ground_speed_kts:.1f} kts  "
-                f"on_ground={s.on_ground}"
+                f"on_ground={s.on_ground}  COM1={s.com1_freq_mhz:.2f} MHz"
             )
             time.sleep(1.0)
     except KeyboardInterrupt:

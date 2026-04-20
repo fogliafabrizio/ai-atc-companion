@@ -34,8 +34,9 @@ Thumbs.db
 .vscode/
 .idea/
 
-# X-Plane runtime files
+# X-Plane runtime files (but allow test fixtures)
 *.fms
+!tests/fixtures/*.fms
 *.acf
 
 # Claude
