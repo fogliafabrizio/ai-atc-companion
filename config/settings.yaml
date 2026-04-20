@@ -7,9 +7,9 @@ udp:
   port: 49100
 
 audio:
-  ptt_key: "space"        # pynput Key name (e.g. space, ctrl) or single char (e.g. v)
-  input_device: null       # null = system default; or device name substring
+  ptt_key: "space" # pynput Key name (e.g. space, ctrl) or single char (e.g. v)
+  input_device: null # null = system default; or device name substring
   output_device: null
-  whisper_model_size: "base"  # tiny / base / small / medium
-  sample_rate: 16000       # Hz — faster-whisper expects 16 kHz
+  whisper_model_size: "medium" # tiny / base / small / medium
+  sample_rate: 16000 # Hz — faster-whisper expects 16 kHz
   channels: 1

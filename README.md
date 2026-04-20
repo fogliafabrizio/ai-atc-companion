@@ -1,7 +1,5 @@
 # AI ATC Companion
 
-Standalone desktop app (Windows/macOS) that simulates a full IFR ATC service alongside X-Plane 12. The pilot communicates via voice as on a real radio frequency. Each ATC role (Delivery, Ground, Tower, Departure, Approach) is handled by a dedicated Claude agent with ICAO phraseology, airport procedure knowledge, and session memory.
-
 ## Requirements
 
 - Python 3.11+
@@ -54,6 +52,23 @@ Override the port ad-hoc from the command line without editing the YAML:
 ```bash
 python src/udp_listener.py 49200
 ```
+
+## Whisper model
+
+The STT model is configured in `config/settings.yaml`:
+
+```yaml
+audio:
+  whisper_model_size: "small"
+```
+
+| Model | Size | CPU latency | Notes |
+|-------|------|-------------|-------|
+| `base` | 74 MB | ~1 s | Low accuracy, fast |
+| `small` | 244 MB | ~2 s | Good accuracy, recommended |
+| `medium` | 769 MB | 3–6 s | Very good accuracy, GPU recommended |
+
+The model is downloaded from HuggingFace on first run. `small` is the recommended default — noticeably more accurate than `base` while keeping latency within the 2-second target on CPU.
 
 ## Tests
 

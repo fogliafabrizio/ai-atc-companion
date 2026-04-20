@@ -133,8 +133,10 @@ class AudioPipeline:
         text = self._stt.transcribe(audio, self._config.sample_rate)
         if not text.strip():
             return
+        print(f"[PILOT] {text}")
         self._session.add_transmission("pilot", text)
         reply = self._router.route_transmission(self._frequency, text)
+        print(f"[ATC]   {reply}")
         self._session.add_transmission("atc", reply)
         audio_bytes = self._tts.synthesize(reply)
         self._output.play(audio_bytes, _OPENAI_PCM_RATE)
@@ -142,5 +144,17 @@ class AudioPipeline:
     def run(self) -> None:
         import pynput.keyboard as kb
 
-        with kb.Listener(on_press=self._on_press, on_release=self._on_release) as listener:
-            listener.join()
+        stop = threading.Event()
+
+        def _on_release_with_stop(key: object) -> None:
+            self._on_release(key)
+            # pynput uses ESC as a conventional stop signal
+            if key == kb.Key.esc:
+                stop.set()
+
+        with kb.Listener(on_press=self._on_press, on_release=_on_release_with_stop):
+            try:
+                while not stop.is_set():
+                    stop.wait(timeout=0.1)
+            except KeyboardInterrupt:
+                pass
