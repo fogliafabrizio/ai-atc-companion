@@ -135,7 +135,7 @@ Each milestone is one `feat/YYYYMMDD-<slug>` branch. Mark each task `[x]` when m
 
 ### Current status (2026-04-20)
 
-Overall completion: **~20%** — M1 complete, full audio pipeline functional.
+Overall completion: **~35%** — M1 and M2 complete, Clearance Delivery live with Claude API.
 
 ---
 
@@ -155,14 +155,26 @@ Overall completion: **~20%** — M1 complete, full audio pipeline functional.
 
 ---
 
-### M2 — First real controller: Clearance Delivery  ✅ done
+### M2 — First real controller: Clearance Delivery  ✅ done (callsign/company pending — see below)
 
 - [x] `skills/controller_prompt.md` — template for system prompt generation (role, ICAO, runway, METAR, session state)
 - [x] `src/controllers/delivery.py` — Claude API call with `claude-sonnet`, builds prompt from skill + session
 - [x] Update `src/controller_router.py` — route by frequency; `MockController` stays as fallback
 - [x] CLI flag or config to toggle mock vs. real controller
 - [x] `tests/test_delivery_controller.py` — assert response shape; record/replay if needed
-- [ ] End-to-end: request IFR clearance, verify coherent SID / squawk / QNH
+- [x] End-to-end: request IFR clearance, verify coherent SID / squawk / QNH
+
+#### Callsign & company (to implement in M2 or M3)
+
+The pilot configures their callsign and airline company in `settings.yaml` (and later in the GUI). The system maps the ICAO company code to the spoken callsign form so the controller addresses the pilot correctly.
+
+**Example**: user sets `company: "RYANAIR"` and `callsign: "RYR2NM"`. The controller calls the pilot "RYANAIR 2 NOVEMBER MIKE" (never the raw ICAO code).
+
+Design:
+- `config/settings.yaml`: add `pilot.callsign` (ICAO format, e.g. `RYR2NM`) and `pilot.company` (spoken name, e.g. `RYANAIR`)
+- `SessionManager` exposes `get_pilot_info()` → injected into the controller system prompt
+- In M3, the FMS reader extracts callsign from the `.fms` file and overrides the manual setting
+- A built-in lookup table maps common ICAO airline codes to spoken names (RYR → RYANAIR, BAW → SPEEDBIRD, AZA → ALITALIA, …) so the user only needs to set one field; spoken name can always be overridden manually
 
 ---
 
