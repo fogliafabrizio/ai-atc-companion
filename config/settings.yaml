@@ -21,10 +21,11 @@ controller:
 
 pilot:
   callsign: "RYR2NM" # ICAO format (e.g. RYR2NM); prefix used to look up spoken company name
-  company: "" # spoken company name override (e.g. RYANAIR); leave blank to use built-in lookup
+  company: "Ryanair" # spoken company name override (e.g. RYANAIR); leave blank to use built-in lookup
 
 fms:
-  path: null # absolute path to .fms file exported from X-Plane 12; null = no flight plan loaded
+  path: C:\Users\fabry\Documents\Claude\ai-atc-companion\LIMLLIRF01.fms # absolute path to .fms file exported from X-Plane 12; null = no flight plan loaded
 
 xplane:
-  path: null # X-Plane 12 root folder; used to locate CIFP at Resources/default data/CIFP/
+  root: C:\Program Files (x86)\Steam\steamapps\common\X-Plane 12 # X-Plane 12 root folder; used to locate apt.dat
+  path: C:\Program Files (x86)\Steam\steamapps\common\X-Plane 12\Custom Data\CIFP # CIFP directory; used by cifp_parser

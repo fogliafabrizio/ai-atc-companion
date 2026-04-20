@@ -18,10 +18,14 @@ from src.udp_listener import (
     _GROUP_SIZE,
     _HEADER_PREFIX,
     _ON_GROUND_AGL_FT,
+    _RREF_COM1_INDEX,
+    _RREF_HEADER,
+    _RREF_RECORD_FORMAT,
     _ROW_GPS,
     _ROW_SPEEDS,
     _ROW_VSPEED,
     parse_data_packet,
+    parse_rref_packet,
 )
 
 # Full 5-byte header as emitted by X-Plane 12 (DATA + 0x2A separator).
@@ -42,6 +46,12 @@ def _make_group(row_index: int, *values: float) -> bytes:
 def _make_packet(*groups: bytes) -> bytes:
     """Assemble a complete DATA packet from pre-packed group bytes."""
     return _HEADER + b"".join(groups)
+
+
+def _make_rref_packet(*records: tuple[int, float]) -> bytes:
+    """Build a minimal RREF response packet from (index, value) pairs."""
+    payload = b"".join(struct.pack(_RREF_RECORD_FORMAT, idx, val) for idx, val in records)
+    return _RREF_HEADER + payload
 
 
 # ---------------------------------------------------------------------------
@@ -171,3 +181,41 @@ class TestXPlaneStateDefaults:
         s = XPlaneState()
         after = time.time()
         assert before <= s.timestamp <= after
+
+    def test_com1_freq_mhz_default_is_zero(self) -> None:
+        assert XPlaneState().com1_freq_mhz == 0.0
+
+
+# ---------------------------------------------------------------------------
+# parse_rref_packet
+# ---------------------------------------------------------------------------
+
+
+class TestRREFPacketParsing:
+    def test_bad_header_returns_empty_dict(self) -> None:
+        bad = b"DATA*" + struct.pack(_RREF_RECORD_FORMAT, 0, 12180.0)
+        assert parse_rref_packet(bad) == {}
+
+    def test_empty_packet_returns_empty_dict(self) -> None:
+        assert parse_rref_packet(b"") == {}
+
+    def test_single_record_parsed(self) -> None:
+        pkt = _make_rref_packet((0, 12180.0))
+        result = parse_rref_packet(pkt)
+        assert result[0] == pytest.approx(12180.0, rel=1e-5)
+
+    def test_multiple_records_in_one_packet(self) -> None:
+        pkt = _make_rref_packet((0, 12180.0), (1, 11870.0))
+        result = parse_rref_packet(pkt)
+        assert result[0] == pytest.approx(12180.0, rel=1e-5)
+        assert result[1] == pytest.approx(11870.0, rel=1e-5)
+
+    def test_frequency_conversion_raw_to_mhz(self) -> None:
+        pkt = _make_rref_packet((_RREF_COM1_INDEX, 12180.0))
+        records = parse_rref_packet(pkt)
+        assert records[_RREF_COM1_INDEX] / 100.0 == pytest.approx(121.8, rel=1e-5)
+
+    def test_truncated_trailing_bytes_ignored(self) -> None:
+        pkt = _make_rref_packet((0, 12180.0)) + b"\xff\xff\xff"
+        result = parse_rref_packet(pkt)
+        assert 0 in result

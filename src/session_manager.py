@@ -66,6 +66,7 @@ class SessionManager:
         self._flight_plan: FlightPlan | None = None
         self._pilot_callsign = pilot_callsign
         self._pilot_company = pilot_company or _resolve_company(pilot_callsign)
+        self._active_frequency_mhz: float = 0.0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -103,9 +104,21 @@ class SessionManager:
         with self._lock:
             return {"callsign": self._pilot_callsign, "company": self._pilot_company}
 
+    @property
+    def active_frequency_mhz(self) -> float:
+        with self._lock:
+            return self._active_frequency_mhz
+
     def _poll_loop(self) -> None:
         while not self._stop_event.is_set():
             state = self._udp.get_state()
+            freq_change: tuple[float, float] | None = None
             with self._lock:
                 self._latest_state = state
+                new_freq = state.com1_freq_mhz
+                if new_freq > 0 and new_freq != self._active_frequency_mhz:
+                    freq_change = (self._active_frequency_mhz, new_freq)
+                    self._active_frequency_mhz = new_freq
+            if freq_change:
+                print(f"[SessionManager] COM1: {freq_change[0]:.2f} → {freq_change[1]:.2f} MHz")
             self._stop_event.wait(self._poll_interval)
