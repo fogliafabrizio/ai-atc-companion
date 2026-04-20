@@ -18,3 +18,13 @@ controller:
   mode: "real" # "mock" or "real" — set to "real" to enable the Claude-powered Clearance Delivery controller
   icao: "LIML" # departure airport ICAO code
   runway: "36" # active departure runway
+
+pilot:
+  callsign: "RYR2NM" # ICAO format (e.g. RYR2NM); prefix used to look up spoken company name
+  company: "" # spoken company name override (e.g. RYANAIR); leave blank to use built-in lookup
+
+fms:
+  path: null # absolute path to .fms file exported from X-Plane 12; null = no flight plan loaded
+
+xplane:
+  path: null # X-Plane 12 root folder; used to locate CIFP at Resources/default data/CIFP/

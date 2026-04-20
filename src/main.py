@@ -40,11 +40,28 @@ def main() -> None:
         channels=audio_cfg.get("channels", 1),
     )
 
+    pilot_cfg = settings.get("pilot", {})
+    fms_cfg = settings.get("fms", {})
+
     udp_listener = UDPListener(port=udp_cfg.get("port", 49100))
     udp_listener.start()
 
-    session = SessionManager(udp_listener)
+    session = SessionManager(
+        udp_listener,
+        pilot_callsign=pilot_cfg.get("callsign", ""),
+        pilot_company=pilot_cfg.get("company", ""),
+    )
     session.start()
+
+    fms_path = fms_cfg.get("path")
+    if fms_path:
+        from src.fms_reader import parse as _parse_fms
+        try:
+            fp = _parse_fms(fms_path)
+            session.set_flight_plan(fp)
+            print(f"Flight plan: {fp.departure} → {fp.arrival}  SID={fp.sid}  STAR={fp.star}")
+        except Exception as exc:
+            print(f"Warning: could not load flight plan from {fms_path!r}: {exc}")
 
     ctrl_mode = ctrl_cfg.get("mode", "mock")
     if ctrl_mode == "real":

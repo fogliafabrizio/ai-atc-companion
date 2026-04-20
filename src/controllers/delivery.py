@@ -39,10 +39,15 @@ class DeliveryController:
             f"[{t.role.upper()}] {t.text}" for t in transmissions
         ) or "(none)"
 
+        pilot_str = _format_pilot_info(self._session.get_pilot_info())
+        fp_str = _format_flight_plan(self._session.get_flight_plan())
+
         system_prompt = (
             self._skill_template
             .replace("{{ICAO}}", self._context.icao)
             .replace("{{RUNWAY}}", self._context.active_runway)
+            .replace("{{PILOT_INFO}}", pilot_str)
+            .replace("{{FLIGHT_PLAN}}", fp_str)
             .replace("{{UDP_STATE}}", json.dumps(udp_state.__dict__, default=str, indent=2))
             .replace("{{TRANSMISSION_HISTORY}}", history_lines)
         )
@@ -53,7 +58,6 @@ class DeliveryController:
         ]
         messages.append({"role": "user", "content": text})
 
-        # Ensure messages alternate properly (Anthropic requires user/assistant alternation)
         messages = _enforce_alternation(messages)
 
         response = self._client.messages.create(
@@ -71,6 +75,33 @@ class DeliveryController:
         return response.content[0].text
 
 
+def _format_pilot_info(info: dict[str, str]) -> str:
+    if not info.get("callsign"):
+        return "Not configured."
+    parts = [f"Callsign: {info['callsign']}"]
+    if info.get("company"):
+        parts.append(f"Spoken company name: {info['company']}")
+    return " — ".join(parts)
+
+
+def _format_flight_plan(fp) -> str:
+    if fp is None:
+        return "null"
+    route = [w.ident for w in fp.waypoints]
+    data: dict = {
+        "departure": fp.departure or None,
+        "arrival": fp.arrival or None,
+        "sid": fp.sid or None,
+        "dep_runway": fp.dep_runway or None,
+        "arr_runway": fp.arr_runway or None,
+        "star": fp.star or None,
+        "approach": fp.approach or None,
+        "cruise_fl": fp.cruise_fl or None,
+        "route": route or None,
+    }
+    return json.dumps({k: v for k, v in data.items() if v is not None}, indent=2)
+
+
 def _enforce_alternation(messages: list[dict]) -> list[dict]:
     """Merge consecutive same-role messages so the list strictly alternates user/assistant."""
     if not messages:
@@ -81,7 +112,6 @@ def _enforce_alternation(messages: list[dict]) -> list[dict]:
             merged[-1] = {"role": msg["role"], "content": merged[-1]["content"] + "\n" + msg["content"]}
         else:
             merged.append(msg)
-    # Anthropic requires the first message to be from the user
     if merged[0]["role"] != "user":
         merged.insert(0, {"role": "user", "content": "(session start)"})
     return merged
