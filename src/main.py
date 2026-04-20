@@ -13,8 +13,13 @@ from src.audio_pipeline import (
     SounddeviceOutput,
     WhisperSTT,
 )
+from src.apt_dat_reader import get_apt_dat_path, get_frequencies
 from src.controller_router import ControllerRouter
+from src.controllers.approach import ApproachContext, ApproachController
 from src.controllers.delivery import DeliveryContext, DeliveryController
+from src.controllers.departure import DepartureContext, DepartureController
+from src.controllers.ground import GroundContext, GroundController
+from src.controllers.tower import TowerContext, TowerController
 from src.session_manager import SessionManager
 from src.udp_listener import UDPListener
 
@@ -31,6 +36,7 @@ def main() -> None:
     udp_cfg = settings.get("udp", {})
     audio_cfg = settings.get("audio", {})
     ctrl_cfg = settings.get("controller", {})
+    xplane_cfg = settings.get("xplane", {})
 
     config = AudioConfig(
         ptt_key=audio_cfg.get("ptt_key", "space"),
@@ -63,20 +69,59 @@ def main() -> None:
         except Exception as exc:
             print(f"Warning: could not load flight plan from {fms_path!r}: {exc}")
 
+    icao = ctrl_cfg.get("icao", "XXXX")
+    runway = ctrl_cfg.get("runway", "00")
     ctrl_mode = ctrl_cfg.get("mode", "mock")
+
+    freq_map: dict[float, str] = {}
+    xplane_root = xplane_cfg.get("root", "")
+    if xplane_root:
+        try:
+            apt_dat_path = get_apt_dat_path(xplane_root)
+            freq_map = get_frequencies(apt_dat_path, icao)
+            print(f"Loaded {len(freq_map)} frequencies for {icao}: {freq_map}")
+        except Exception as exc:
+            print(f"Warning: could not load apt.dat frequencies: {exc}")
+
     if ctrl_mode == "real":
+        client = anthropic.Anthropic()
         delivery = DeliveryController(
-            client=anthropic.Anthropic(),
+            client=client,
             session=session,
-            context=DeliveryContext(
-                icao=ctrl_cfg.get("icao", "XXXX"),
-                active_runway=ctrl_cfg.get("runway", "00"),
-            ),
+            context=DeliveryContext(icao=icao, active_runway=runway),
         )
-        router = ControllerRouter(delivery_controller=delivery)
-        print(f"Controller mode: REAL — Clearance Delivery at {ctrl_cfg.get('icao', 'XXXX')} rwy {ctrl_cfg.get('runway', '00')}")
+        ground = GroundController(
+            client=client,
+            session=session,
+            context=GroundContext(icao=icao, active_runway=runway),
+        )
+        tower = TowerController(
+            client=client,
+            session=session,
+            context=TowerContext(icao=icao, active_runway=runway),
+        )
+        dep = DepartureController(
+            client=client,
+            session=session,
+            context=DepartureContext(icao=icao, active_runway=runway),
+        )
+        app = ApproachController(
+            client=client,
+            session=session,
+            context=ApproachContext(icao=icao, active_runway=runway),
+        )
+        router = ControllerRouter(
+            session=session,
+            freq_map=freq_map,
+            delivery_controller=delivery,
+            ground_controller=ground,
+            tower_controller=tower,
+            departure_controller=dep,
+            approach_controller=app,
+        )
+        print(f"Controller mode: REAL — all controllers at {icao} rwy {runway}")
     else:
-        router = ControllerRouter()
+        router = ControllerRouter(session=session, freq_map=freq_map)
         print("Controller mode: MOCK")
 
     # Instantiate WhisperSTT before entering the PTT loop so the model

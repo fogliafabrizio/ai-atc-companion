@@ -144,7 +144,7 @@ Each milestone is one `feat/YYYYMMDD-<slug>` branch. Mark each task `[x]` when m
 
 ### Current status (2026-04-20)
 
-Overall completion: **~50%** — M1, M2, and M3 complete.
+Overall completion: **~65%** — M1, M2, M3, and M4 complete.
 
 ---
 
@@ -210,26 +210,26 @@ Design:
 
 ---
 
-### M4 — Remaining controllers + live frequency routing  ⬜ not started
+### M4 — Remaining controllers + live frequency routing  ✅ done
 
 #### New controllers
-- [ ] `src/controllers/ground.py`
-- [ ] `src/controllers/tower.py`
-- [ ] `src/controllers/departure.py`
-- [ ] `src/controllers/approach.py`
-- [ ] Smoke test per controller with canned session state
+- [x] `src/controllers/ground.py`
+- [x] `src/controllers/tower.py`
+- [x] `src/controllers/departure.py`
+- [x] `src/controllers/approach.py`
+- [x] Smoke test per controller with canned session state
 
 #### Live frequency-driven routing (the core of this milestone)
 At startup `ControllerRouter` calls `AptDatReader.get_frequencies(icao)` to build a frequency→controller map for the departure airport (and arrival airport once loaded from the FMS). On every PTT press the router reads `SessionManager.active_frequency_mhz` (sourced from RREF COM1) and activates the matching controller.
 
-- [ ] `ControllerRouter` loads the frequency map from `AptDatReader` at startup
-- [ ] `ControllerRouter.route_transmission()` uses live `com1_freq_mhz` instead of a manually passed parameter
-- [ ] Frequency change detected by `SessionManager` is logged as a session event ("tuned 118.70 → Tower")
-- [ ] `tests/test_controller_router.py` — verify correct controller activated for each frequency in the map
+- [x] `ControllerRouter` loads the frequency map from `AptDatReader` at startup
+- [x] `ControllerRouter.route_transmission()` uses live `com1_freq_mhz` instead of a manually passed parameter
+- [x] Frequency change detected by `SessionManager` is logged as a session event ("tuned 118.70 → Tower")
+- [x] `tests/test_controller_router.py` — verify correct controller activated for each frequency in the map
 
 #### Phase-driven proactive handoff (secondary)
-- [ ] Phase inference from UDP state (on_ground + GS + AGL → taxi/takeoff/climb/cruise/descent/approach)
-- [ ] Proactive handoff hints in TTS: controller tells pilot "contact Tower on 118.70" so pilot knows which freq to tune
+- [x] Phase inference from UDP state (on_ground + GS + AGL → taxi/takeoff/climb/cruise/descent/approach) — `src/flight_phase.py`
+- [x] Proactive handoff hints in TTS: `{{FLIGHT_PHASE}}` injected into every controller system prompt; each skill file instructs the controller to append "Contact [next role] on [freq]" at jurisdictional boundaries
 
 ---
 
@@ -276,7 +276,11 @@ Only if CLI UX proves insufficient after real flights. Likely `PyQt6`.
 ## Skills Claude Code (developed alongside milestones)
 
 - **`skills/fms_parser.md`** (M3) — how to read an X-Plane 12 `.fms` file and extract: departure/arrival airport, route, aircraft, cruise FL
-- **`skills/controller_prompt.md`** (M2) — how to generate the system prompt for an ATC controller given: role, ICAO airport, active runway, weather, session state
+- **`skills/delivery_prompt.md`** (M2) — system prompt template for Clearance Delivery (renamed from `controller_prompt.md`)
+- **`skills/ground_prompt.md`** (M4) — system prompt template for Ground controller
+- **`skills/tower_prompt.md`** (M4) — system prompt template for Tower controller
+- **`skills/departure_prompt.md`** (M4) — system prompt template for Departure (Radar) controller
+- **`skills/approach_prompt.md`** (M4) — system prompt template for Approach (Radar) controller
 - **`skills/cifp_parser.md`** (M3) — how to extract SID/STAR procedures from an ARINC 424 file in the X-Plane CIFP folder
 
 ---

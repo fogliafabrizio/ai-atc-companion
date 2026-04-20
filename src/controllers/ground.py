@@ -3,24 +3,25 @@ from dataclasses import dataclass
 
 import anthropic
 
-from src.controllers.base import BaseController, _format_pilot_info, _format_flight_plan
+from src.controllers.base import BaseController
 from src.session_manager import SessionManager
 
 
 @dataclass
-class DeliveryContext:
+class GroundContext:
     icao: str
     active_runway: str
+    dep_or_arr: str = "departure"  # "departure" | "arrival"
 
 
-class DeliveryController(BaseController):
-    _SKILL_PATH = "skills/delivery_prompt.md"
+class GroundController(BaseController):
+    _SKILL_PATH = "skills/ground_prompt.md"
 
     def __init__(
         self,
         client: anthropic.Anthropic,
         session: SessionManager,
-        context: DeliveryContext,
+        context: GroundContext,
         skill_path: str = _SKILL_PATH,
         model: str = BaseController._MODEL,
     ) -> None:
@@ -40,6 +41,7 @@ class DeliveryController(BaseController):
             template
             .replace("{{ICAO}}", self._context.icao)
             .replace("{{RUNWAY}}", self._context.active_runway)
+            .replace("{{DEP_OR_ARR}}", self._context.dep_or_arr)
             .replace("{{PILOT_INFO}}", pilot_str)
             .replace("{{FLIGHT_PLAN}}", fp_str)
             .replace("{{UDP_STATE}}", json.dumps(udp_state.__dict__, default=str, indent=2))

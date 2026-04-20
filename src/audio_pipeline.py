@@ -78,7 +78,6 @@ class AudioPipeline:
         audio_output: AudioOutput,
         controller_router: ControllerRouter,
         session_manager: SessionManager,
-        frequency: float = 121.8,
     ) -> None:
         self._config = config
         self._stt = stt_engine
@@ -86,7 +85,6 @@ class AudioPipeline:
         self._output = audio_output
         self._router = controller_router
         self._session = session_manager
-        self._frequency = frequency
         self._ptt_active = threading.Event()
         self._ptt_key = self._parse_ptt_key(config.ptt_key)
         self._recording_buffer: list[np.ndarray] = []
@@ -135,7 +133,7 @@ class AudioPipeline:
             return
         print(f"[PILOT] {text}")
         self._session.add_transmission("pilot", text)
-        reply = self._router.route_transmission(self._frequency, text)
+        reply = self._router.route_transmission(text)
         print(f"[ATC]   {reply}")
         self._session.add_transmission("atc", reply)
         audio_bytes = self._tts.synthesize(reply)

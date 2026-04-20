@@ -48,6 +48,13 @@ class Transmission:
     timestamp: float = field(default_factory=time.time)
 
 
+@dataclass
+class SessionEvent:
+    kind: str
+    payload: dict
+    timestamp: float = field(default_factory=time.time)
+
+
 class SessionManager:
     def __init__(
         self,
@@ -67,6 +74,7 @@ class SessionManager:
         self._pilot_callsign = pilot_callsign
         self._pilot_company = pilot_company or _resolve_company(pilot_callsign)
         self._active_frequency_mhz: float = 0.0
+        self._events: list[SessionEvent] = []
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -109,6 +117,14 @@ class SessionManager:
         with self._lock:
             return self._active_frequency_mhz
 
+    def log_event(self, kind: str, payload: dict) -> None:
+        with self._lock:
+            self._events.append(SessionEvent(kind=kind, payload=payload))
+
+    def get_events(self) -> list[SessionEvent]:
+        with self._lock:
+            return list(self._events)
+
     def _poll_loop(self) -> None:
         while not self._stop_event.is_set():
             state = self._udp.get_state()
@@ -120,5 +136,6 @@ class SessionManager:
                     freq_change = (self._active_frequency_mhz, new_freq)
                     self._active_frequency_mhz = new_freq
             if freq_change:
+                self.log_event("freq_change", {"from_mhz": freq_change[0], "to_mhz": freq_change[1]})
                 print(f"[SessionManager] COM1: {freq_change[0]:.2f} → {freq_change[1]:.2f} MHz")
             self._stop_event.wait(self._poll_interval)
