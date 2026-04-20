@@ -1,7 +1,15 @@
-# AI ATC Companion — configurazione principale
-# Vedi .env.example per le variabili d'ambiente richieste
+# AI ATC Companion — main configuration
+# See .env.example for required environment variables
 
-# Ricezione dati da X-Plane 12 (Settings → Network → Data Output)
-# Deve essere una porta NON usata da X-Plane stesso (evitare 49000/49001).
+# X-Plane 12 data reception (Settings → Network → Data Output)
+# Must be a port NOT used by X-Plane itself (avoid 49000/49001).
 udp:
   port: 49100
+
+audio:
+  ptt_key: "space"        # pynput Key name (e.g. space, ctrl) or single char (e.g. v)
+  input_device: null       # null = system default; or device name substring
+  output_device: null
+  whisper_model_size: "base"  # tiny / base / small / medium
+  sample_rate: 16000       # Hz — faster-whisper expects 16 kHz
+  channels: 1
