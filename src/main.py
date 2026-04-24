@@ -13,8 +13,14 @@ from src.audio_pipeline import (
     SounddeviceOutput,
     WhisperSTT,
 )
+from src.apt_dat_reader import get_apt_dat_path, get_frequencies
 from src.controller_router import ControllerRouter
+from src.controllers.approach import ApproachContext, ApproachController
 from src.controllers.delivery import DeliveryContext, DeliveryController
+from src.controllers.departure import DepartureContext, DepartureController
+from src.controllers.ground import GroundContext, GroundController
+from src.controllers.tower import TowerContext, TowerController
+from src.proactive_monitor import ProactiveATCMonitor
 from src.session_manager import SessionManager
 from src.udp_listener import UDPListener
 
@@ -31,6 +37,7 @@ def main() -> None:
     udp_cfg = settings.get("udp", {})
     audio_cfg = settings.get("audio", {})
     ctrl_cfg = settings.get("controller", {})
+    xplane_cfg = settings.get("xplane", {})
 
     config = AudioConfig(
         ptt_key=audio_cfg.get("ptt_key", "space"),
@@ -50,33 +57,81 @@ def main() -> None:
         udp_listener,
         pilot_callsign=pilot_cfg.get("callsign", ""),
         pilot_company=pilot_cfg.get("company", ""),
+        parking_stand=str(pilot_cfg.get("parking_stand", "")),
     )
     session.start()
 
+    from src.fms_reader import parse as _parse_fms
     fms_path = fms_cfg.get("path")
+    icao = "XXXX"
+    runway = "00"
     if fms_path:
-        from src.fms_reader import parse as _parse_fms
         try:
             fp = _parse_fms(fms_path)
             session.set_flight_plan(fp)
-            print(f"Flight plan: {fp.departure} → {fp.arrival}  SID={fp.sid}  STAR={fp.star}")
+            icao = fp.departure or "XXXX"
+            runway = fp.dep_runway or "00"
+            print(f"Flight plan: {fp.departure} → {fp.arrival}  SID={fp.sid}  STAR={fp.star}  RWY={runway}")
         except Exception as exc:
-            print(f"Warning: could not load flight plan from {fms_path!r}: {exc}")
-
-    ctrl_mode = ctrl_cfg.get("mode", "mock")
-    if ctrl_mode == "real":
-        delivery = DeliveryController(
-            client=anthropic.Anthropic(),
-            session=session,
-            context=DeliveryContext(
-                icao=ctrl_cfg.get("icao", "XXXX"),
-                active_runway=ctrl_cfg.get("runway", "00"),
-            ),
-        )
-        router = ControllerRouter(delivery_controller=delivery)
-        print(f"Controller mode: REAL — Clearance Delivery at {ctrl_cfg.get('icao', 'XXXX')} rwy {ctrl_cfg.get('runway', '00')}")
+            print(f"[WARN] Flight plan not loaded: {exc}")
     else:
-        router = ControllerRouter()
+        print("[WARN] No FMS path configured — ICAO and runway unknown.")
+    ctrl_mode = ctrl_cfg.get("mode", "mock")
+
+    freq_map: dict[float, str] = {}
+    xplane_root = xplane_cfg.get("root", "")
+    if xplane_root:
+        try:
+            apt_dat_path = get_apt_dat_path(xplane_root)
+            freq_map = get_frequencies(apt_dat_path, icao)
+            print(f"Frequencies loaded for {icao}: {list(freq_map.values())}")
+        except Exception as exc:
+            print(f"[WARN] apt.dat frequencies not loaded: {exc}")
+
+    if ctrl_mode == "real":
+        client = anthropic.Anthropic()
+        delivery = DeliveryController(
+            client=client,
+            session=session,
+            context=DeliveryContext(icao=icao, active_runway=runway),
+            freq_map=freq_map,
+        )
+        ground = GroundController(
+            client=client,
+            session=session,
+            context=GroundContext(icao=icao, active_runway=runway),
+            freq_map=freq_map,
+        )
+        tower = TowerController(
+            client=client,
+            session=session,
+            context=TowerContext(icao=icao, active_runway=runway),
+            freq_map=freq_map,
+        )
+        dep = DepartureController(
+            client=client,
+            session=session,
+            context=DepartureContext(icao=icao, active_runway=runway),
+            freq_map=freq_map,
+        )
+        app = ApproachController(
+            client=client,
+            session=session,
+            context=ApproachContext(icao=icao, active_runway=runway),
+            freq_map=freq_map,
+        )
+        router = ControllerRouter(
+            session=session,
+            freq_map=freq_map,
+            delivery_controller=delivery,
+            ground_controller=ground,
+            tower_controller=tower,
+            departure_controller=dep,
+            approach_controller=app,
+        )
+        print(f"Controller mode: REAL — all controllers at {icao} rwy {runway}")
+    else:
+        router = ControllerRouter(session=session, freq_map=freq_map)
         print("Controller mode: MOCK")
 
     # Instantiate WhisperSTT before entering the PTT loop so the model
@@ -94,8 +149,18 @@ def main() -> None:
         session_manager=session,
     )
 
+    proactive_enabled = audio_cfg.get("proactive_enabled", True)
+    proactive_monitor = ProactiveATCMonitor(
+        session=session,
+        router=router,
+        pipeline=pipeline,
+        enabled=proactive_enabled,
+    )
+    proactive_monitor.start()
+
     def _shutdown(sig: int, frame: object) -> None:
         print("\nShutting down...")
+        proactive_monitor.stop()
         session.stop()
         udp_listener.stop()
         sys.exit(0)
@@ -103,7 +168,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    print(f"PTT key: [{config.ptt_key}]  |  Press Ctrl-C to exit.")
+    print(f"PTT key: [{config.ptt_key}]  |  Proactive ATC: {'ON' if proactive_enabled else 'OFF'}  |  Press Ctrl-C to exit.")
     pipeline.run()
 
 

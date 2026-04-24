@@ -3,24 +3,24 @@ from dataclasses import dataclass
 
 import anthropic
 
-from src.controllers.base import BaseController, _format_pilot_info, _format_flight_plan
+from src.controllers.base import BaseController
 from src.session_manager import SessionManager
 
 
 @dataclass
-class DeliveryContext:
+class DepartureContext:
     icao: str
     active_runway: str
 
 
-class DeliveryController(BaseController):
-    _SKILL_PATH = "skills/delivery_prompt.md"
+class DepartureController(BaseController):
+    _SKILL_PATH = "skills/departure_prompt.md"
 
     def __init__(
         self,
         client: anthropic.Anthropic,
         session: SessionManager,
-        context: DeliveryContext,
+        context: DepartureContext,
         skill_path: str = _SKILL_PATH,
         model: str = BaseController._MODEL,
         freq_map: dict[float, str] | None = None,

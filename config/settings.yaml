@@ -7,7 +7,8 @@ udp:
   port: 49100
 
 audio:
-  ptt_key: "f12" # pynput Key name (e.g. space, ctrl) or single char (e.g. v)
+  ptt_key: "ctrl+space" # single key (e.g. space) or combo (e.g. ctrl+space, alt+v)
+  proactive_enabled: true # set to false to disable unsolicited ATC transmissions
   input_device: null # null = system default; or device name substring
   output_device: null
   whisper_model_size: "large-v3" # tiny / base / small / medium / large-v3
@@ -15,13 +16,12 @@ audio:
   channels: 1
 
 controller:
-  mode: "real" # "mock" or "real" — set to "real" to enable the Claude-powered Clearance Delivery controller
-  icao: "LIML" # departure airport ICAO code
-  runway: "36" # active departure runway
+  mode: "real" # "mock" or "real"
 
 pilot:
   callsign: "RYR2NM" # ICAO format (e.g. RYR2NM); prefix used to look up spoken company name
   company: "Ryanair" # spoken company name override (e.g. RYANAIR); leave blank to use built-in lookup
+  parking_stand: "" # stand/gate number (e.g. "05"); used by Ground for realistic taxi routing
 
 fms:
   path: C:\Users\fabry\Documents\Claude\ai-atc-companion\LIMLLIRF01.fms # absolute path to .fms file exported from X-Plane 12; null = no flight plan loaded

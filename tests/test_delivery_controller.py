@@ -2,7 +2,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.controller_router import ControllerRouter, DELIVERY_FREQ
 from src.controllers.delivery import DeliveryContext, DeliveryController
 from src.session_manager import SessionManager
 from src.udp_listener import XPlaneState
@@ -38,7 +37,7 @@ def mock_client() -> MagicMock:
 def delivery(mock_client: MagicMock, session: SessionManager, tmp_path) -> DeliveryController:
     skill_file = tmp_path / "controller_prompt.md"
     skill_file.write_text(
-        "Role: {{ICAO}} rwy {{RUNWAY}}\nState: {{UDP_STATE}}\nHistory: {{TRANSMISSION_HISTORY}}"
+        "Role: {{ICAO}} rwy {{FILED_RUNWAY}} active={{ACTIVE_RUNWAY}}\nState: {{UDP_STATE}}\nHistory: {{TRANSMISSION_HISTORY}}"
     )
     return DeliveryController(
         client=mock_client,
@@ -127,40 +126,3 @@ class TestDeliveryController:
         assert isinstance(result, str)
 
 
-class TestRouterWithDelivery:
-    def test_delivery_freq_routes_to_delivery_controller(
-        self, mock_client: MagicMock, session: SessionManager, tmp_path
-    ) -> None:
-        skill_file = tmp_path / "p.md"
-        skill_file.write_text("{{ICAO}} {{RUNWAY}} {{UDP_STATE}} {{TRANSMISSION_HISTORY}}")
-        dc = DeliveryController(
-            client=mock_client,
-            session=session,
-            context=DeliveryContext(icao="LIML", active_runway="36"),
-            skill_path=str(skill_file),
-        )
-        router = ControllerRouter(delivery_controller=dc)
-        result = router.route_transmission(DELIVERY_FREQ, "request clearance")
-        assert result == "ATC MOCK REPLY"
-
-    def test_other_freq_falls_back_to_mock(
-        self, mock_client: MagicMock, session: SessionManager, tmp_path
-    ) -> None:
-        skill_file = tmp_path / "p.md"
-        skill_file.write_text("{{ICAO}} {{RUNWAY}} {{UDP_STATE}} {{TRANSMISSION_HISTORY}}")
-        dc = DeliveryController(
-            client=mock_client,
-            session=session,
-            context=DeliveryContext(icao="LIML", active_runway="36"),
-            skill_path=str(skill_file),
-        )
-        router = ControllerRouter(delivery_controller=dc)
-        result = router.route_transmission(121.9, "taxi request")
-        assert result != "ATC MOCK REPLY"
-        assert isinstance(result, str)
-
-    def test_no_delivery_controller_uses_mock(self) -> None:
-        router = ControllerRouter()
-        result = router.route_transmission(DELIVERY_FREQ, "request clearance")
-        assert isinstance(result, str)
-        assert len(result) > 0

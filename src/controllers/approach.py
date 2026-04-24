@@ -3,24 +3,25 @@ from dataclasses import dataclass
 
 import anthropic
 
-from src.controllers.base import BaseController, _format_pilot_info, _format_flight_plan
+from src.controllers.base import BaseController
 from src.session_manager import SessionManager
 
 
 @dataclass
-class DeliveryContext:
+class ApproachContext:
     icao: str
     active_runway: str
+    approach_type: str = "ILS"  # "ILS" | "RNAV" | "VOR"
 
 
-class DeliveryController(BaseController):
-    _SKILL_PATH = "skills/delivery_prompt.md"
+class ApproachController(BaseController):
+    _SKILL_PATH = "skills/approach_prompt.md"
 
     def __init__(
         self,
         client: anthropic.Anthropic,
         session: SessionManager,
-        context: DeliveryContext,
+        context: ApproachContext,
         skill_path: str = _SKILL_PATH,
         model: str = BaseController._MODEL,
         freq_map: dict[float, str] | None = None,
@@ -45,6 +46,7 @@ class DeliveryController(BaseController):
             .replace("{{ICAO}}", self._context.icao)
             .replace("{{FILED_RUNWAY}}", self._context.active_runway)
             .replace("{{ACTIVE_RUNWAY}}", active_runway or self._context.active_runway)
+            .replace("{{APPROACH_TYPE}}", self._context.approach_type)
             .replace("{{FREQ_MAP}}", freq_map_str)
             .replace("{{METAR}}", metar)
             .replace("{{PILOT_INFO}}", pilot_str)

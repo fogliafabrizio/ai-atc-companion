@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_COM_ROW_CODES: dict[int, str] = {
+# apt.dat ≤1100 row codes (frequency stored as Hz×100, divide by 100 for MHz)
+_COM_ROW_CODES_V1: dict[int, str] = {
     50: "atis",
     52: "delivery",
     53: "ground",
@@ -11,16 +12,33 @@ _COM_ROW_CODES: dict[int, str] = {
     56: "departure",
 }
 
+# apt.dat 1200 row codes (frequency stored in kHz, divide by 1000 for MHz)
+_COM_ROW_CODES_V2: dict[int, str] = {
+    1050: "atis",
+    1052: "delivery",
+    1053: "ground",
+    1054: "tower",
+    1055: "approach",
+    1056: "departure",
+}
+
+_ALL_COM_CODES: dict[int, tuple[str, float]] = {
+    code: (role, 100.0) for code, role in _COM_ROW_CODES_V1.items()
+} | {
+    code: (role, 1000.0) for code, role in _COM_ROW_CODES_V2.items()
+}
+
 
 def get_apt_dat_path(xplane_root: str | Path) -> Path:
-    return (
-        Path(xplane_root)
-        / "Resources"
-        / "default scenery"
-        / "default apt dat"
-        / "Earth nav data"
-        / "apt.dat"
-    )
+    root = Path(xplane_root)
+    candidates = [
+        root / "Resources" / "default scenery" / "default apt dat" / "Earth nav data" / "apt.dat",
+        root / "Global Scenery" / "Global Airports" / "Earth nav data" / "apt.dat",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]  # let the caller surface the FileNotFoundError
 
 
 def get_frequencies(apt_dat_path: str | Path, icao: str) -> dict[float, str]:
@@ -39,6 +57,7 @@ def get_frequencies(apt_dat_path: str | Path, icao: str) -> dict[float, str]:
                     break
                 if len(parts) >= 5 and parts[4] == icao:
                     in_airport = True
-            elif in_airport and code in _COM_ROW_CODES:
-                result[int(parts[1]) / 100.0] = _COM_ROW_CODES[code]
+            elif in_airport and code in _ALL_COM_CODES:
+                role, divisor = _ALL_COM_CODES[code]
+                result[int(parts[1]) / divisor] = role
     return result

@@ -118,7 +118,13 @@ Routes every pilot transmission to the correct controller based on the **live CO
 
 Frequency→role mapping is loaded at startup from `apt.dat` for the departure/arrival ICAO. Fallback: `MockController` for any unrecognised frequency.
 
+The `freq_map` is forwarded to every controller at construction and injected as `{{FREQ_MAP}}` into their system prompts so they always use the correct airport-specific frequencies in handoff instructions.
+
 Each controller is a Claude agent with a dedicated system prompt.
+
+### Proactive ATC Monitor
+
+`src/proactive_monitor.py` — `ProactiveATCMonitor` runs as a background daemon thread (1 Hz). It detects flight-phase transitions (e.g. TAXI→TAKEOFF, TAKEOFF→CLIMB, LANDING→TAXI) and calls the active controller's `generate_proactive(context)` method to produce an unsolicited ATC transmission without requiring a PTT press. Each transition fires at most once per flight. Can be disabled via `audio.proactive_enabled: false` in `settings.yaml`.
 
 ### Audio Pipeline
 
@@ -144,7 +150,7 @@ Each milestone is one `feat/YYYYMMDD-<slug>` branch. Mark each task `[x]` when m
 
 ### Current status (2026-04-20)
 
-Overall completion: **~50%** — M1, M2, and M3 complete.
+Overall completion: **~70%** — M1, M2, M3, M4, and M4.5 complete.
 
 ---
 
@@ -210,26 +216,38 @@ Design:
 
 ---
 
-### M4 — Remaining controllers + live frequency routing  ⬜ not started
+### M4 — Remaining controllers + live frequency routing  ✅ done
 
 #### New controllers
-- [ ] `src/controllers/ground.py`
-- [ ] `src/controllers/tower.py`
-- [ ] `src/controllers/departure.py`
-- [ ] `src/controllers/approach.py`
-- [ ] Smoke test per controller with canned session state
+- [x] `src/controllers/ground.py`
+- [x] `src/controllers/tower.py`
+- [x] `src/controllers/departure.py`
+- [x] `src/controllers/approach.py`
+- [x] Smoke test per controller with canned session state
 
 #### Live frequency-driven routing (the core of this milestone)
 At startup `ControllerRouter` calls `AptDatReader.get_frequencies(icao)` to build a frequency→controller map for the departure airport (and arrival airport once loaded from the FMS). On every PTT press the router reads `SessionManager.active_frequency_mhz` (sourced from RREF COM1) and activates the matching controller.
 
-- [ ] `ControllerRouter` loads the frequency map from `AptDatReader` at startup
-- [ ] `ControllerRouter.route_transmission()` uses live `com1_freq_mhz` instead of a manually passed parameter
-- [ ] Frequency change detected by `SessionManager` is logged as a session event ("tuned 118.70 → Tower")
-- [ ] `tests/test_controller_router.py` — verify correct controller activated for each frequency in the map
+- [x] `ControllerRouter` loads the frequency map from `AptDatReader` at startup
+- [x] `ControllerRouter.route_transmission()` uses live `com1_freq_mhz` instead of a manually passed parameter
+- [x] Frequency change detected by `SessionManager` is logged as a session event ("tuned 118.70 → Tower")
+- [x] `tests/test_controller_router.py` — verify correct controller activated for each frequency in the map
 
 #### Phase-driven proactive handoff (secondary)
-- [ ] Phase inference from UDP state (on_ground + GS + AGL → taxi/takeoff/climb/cruise/descent/approach)
-- [ ] Proactive handoff hints in TTS: controller tells pilot "contact Tower on 118.70" so pilot knows which freq to tune
+- [x] Phase inference from UDP state (on_ground + GS + AGL → taxi/takeoff/climb/cruise/descent/approach) — `src/flight_phase.py`
+- [x] Proactive handoff hints in TTS: `{{FLIGHT_PHASE}}` injected into every controller system prompt; each skill file instructs the controller to append "Contact [next role] on [freq]" at jurisdictional boundaries
+
+---
+
+### M4.5 — Controller accuracy & proactive ATC  ✅ done
+
+Fixes five issues found during first real flights at LIML.
+
+- [x] **Fix 1 — Correct handoff frequencies**: `freq_map` (from apt.dat) is now passed to all controllers and injected as `{{FREQ_MAP}}` into every skill template. Controllers must use only frequencies in this map when instructing the pilot to change frequency.
+- [x] **Fix 2 — Parking stand for realistic taxi routing**: `pilot.parking_stand` added to `config/settings.yaml` and `SessionManager`. Ground prompt receives `{{PARKING_STAND}}` and instructs Claude to produce a taxi route from that stand to the holding point.
+- [x] **Fix 3 — Active runway from METAR, not FMS**: renamed `{{RUNWAY}}` → `{{FILED_RUNWAY}}` (FMS reference only) in all skill templates; added `{{ACTIVE_RUNWAY}}` (set by Delivery after clearance) and `{{METAR}}`; controllers determine the active runway from wind, not the filed plan.
+- [x] **Fix 4 — Proactive ATC transmissions**: `src/proactive_monitor.py` — `ProactiveATCMonitor` background thread detects flight-phase transitions and calls `controller.generate_proactive(context)` to produce unsolicited ATC speech (takeoff clearance, handoff to departure, handoff to en-route, landing clearance, handoff to ground). Controlled by `audio.proactive_enabled` in `settings.yaml`.
+- [x] **Fix 5 — PTT combo key**: `_parse_ptt_key()` now supports `"ctrl+space"`, `"alt+v"`, etc. Default changed to `ctrl+space`.
 
 ---
 
@@ -276,7 +294,11 @@ Only if CLI UX proves insufficient after real flights. Likely `PyQt6`.
 ## Skills Claude Code (developed alongside milestones)
 
 - **`skills/fms_parser.md`** (M3) — how to read an X-Plane 12 `.fms` file and extract: departure/arrival airport, route, aircraft, cruise FL
-- **`skills/controller_prompt.md`** (M2) — how to generate the system prompt for an ATC controller given: role, ICAO airport, active runway, weather, session state
+- **`skills/delivery_prompt.md`** (M2) — system prompt template for Clearance Delivery (renamed from `controller_prompt.md`)
+- **`skills/ground_prompt.md`** (M4) — system prompt template for Ground controller
+- **`skills/tower_prompt.md`** (M4) — system prompt template for Tower controller
+- **`skills/departure_prompt.md`** (M4) — system prompt template for Departure (Radar) controller
+- **`skills/approach_prompt.md`** (M4) — system prompt template for Approach (Radar) controller
 - **`skills/cifp_parser.md`** (M3) — how to extract SID/STAR procedures from an ARINC 424 file in the X-Plane CIFP folder
 
 ---

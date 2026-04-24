@@ -3,24 +3,25 @@ from dataclasses import dataclass
 
 import anthropic
 
-from src.controllers.base import BaseController, _format_pilot_info, _format_flight_plan
+from src.controllers.base import BaseController
 from src.session_manager import SessionManager
 
 
 @dataclass
-class DeliveryContext:
+class GroundContext:
     icao: str
     active_runway: str
+    dep_or_arr: str = "departure"  # "departure" | "arrival"
 
 
-class DeliveryController(BaseController):
-    _SKILL_PATH = "skills/delivery_prompt.md"
+class GroundController(BaseController):
+    _SKILL_PATH = "skills/ground_prompt.md"
 
     def __init__(
         self,
         client: anthropic.Anthropic,
         session: SessionManager,
-        context: DeliveryContext,
+        context: GroundContext,
         skill_path: str = _SKILL_PATH,
         model: str = BaseController._MODEL,
         freq_map: dict[float, str] | None = None,
@@ -40,11 +41,15 @@ class DeliveryController(BaseController):
         active_runway: str,
         metar: str,
     ) -> str:
+        parking_stand = pilot_str  # already formatted; extract stand separately
+        stand = self._session.get_pilot_info().get("parking_stand", "") or "(unknown)"
         return (
             template
             .replace("{{ICAO}}", self._context.icao)
             .replace("{{FILED_RUNWAY}}", self._context.active_runway)
             .replace("{{ACTIVE_RUNWAY}}", active_runway or self._context.active_runway)
+            .replace("{{DEP_OR_ARR}}", self._context.dep_or_arr)
+            .replace("{{PARKING_STAND}}", stand)
             .replace("{{FREQ_MAP}}", freq_map_str)
             .replace("{{METAR}}", metar)
             .replace("{{PILOT_INFO}}", pilot_str)
