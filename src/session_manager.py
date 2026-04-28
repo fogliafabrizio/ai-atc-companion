@@ -161,5 +161,5 @@ class SessionManager:
                     self._active_frequency_mhz = new_freq
             if freq_change:
                 self.log_event("freq_change", {"from_mhz": freq_change[0], "to_mhz": freq_change[1]})
-                print(f"[SessionManager] COM1: {freq_change[0]:.2f} → {freq_change[1]:.2f} MHz")
+                print(f"[SessionManager] COM1: {freq_change[0]:.3f} → {freq_change[1]:.3f} MHz")
             self._stop_event.wait(self._poll_interval)
