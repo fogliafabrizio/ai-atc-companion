@@ -22,9 +22,10 @@ DATA rows extracted here:
                                values[3] = altitude AGL (ft)
 
 RREF subscription (port 49000 → responses on port 49101):
-    Dataref sim/cockpit/radios/com1_freq_hz — active COM1 frequency as an
-    integer (Hz×100, e.g. 12180 = 121.80 MHz). Polled at 2 Hz; any change
+    Dataref sim/cockpit2/radios/actuators/com1_frequency_hz_833 — Com radio 1 frequency, kHz, supports 8.3 khz spacing
+    active COM1 frequency as an integer (Hz×100, e.g. 121805 = 121.805 MHz). Polled at 2 Hz; any change
     is surfaced in XPlaneState.com1_freq_mhz.
+
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ _ON_GROUND_AGL_FT = 20.0
 
 _RREF_SEND_PORT = 49000
 _RREF_RECV_PORT = 49101
-_RREF_COM1_DATAREF = b"sim/cockpit/radios/com1_freq_hz"
+_RREF_COM1_DATAREF = b"sim/cockpit2/radios/actuators/com1_frequency_hz_833"
 _RREF_COM1_INDEX = 0
 _RREF_POLL_HZ = 2
 _RREF_HEADER = b"RREF,"  # comma — response header differs from subscribe header
@@ -253,7 +254,7 @@ class UDPListener:
                 freq_raw = records.get(_RREF_COM1_INDEX)
                 if freq_raw is not None and freq_raw > 0:
                     with self._lock:
-                        self._state = replace(self._state, com1_freq_mhz=freq_raw / 100.0)
+                        self._state = replace(self._state, com1_freq_mhz=freq_raw / 1000.0)
         finally:
             sock.close()
 
