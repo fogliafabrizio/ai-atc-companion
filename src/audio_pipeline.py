@@ -116,10 +116,10 @@ class AudioPipeline:
                 modifiers.add(kb.Key.ctrl_l)
                 modifiers.add(kb.Key.ctrl_r)
             elif mod in ("shift",):
-                modifiers.add(kb.Key.shift)
+                modifiers.add(kb.Key.shift_l)
                 modifiers.add(kb.Key.shift_r)
             elif mod in ("alt",):
-                modifiers.add(kb.Key.alt)
+                modifiers.add(kb.Key.alt_l)
                 modifiers.add(kb.Key.alt_r)
             else:
                 modifiers.add(_parse_single(mod))
