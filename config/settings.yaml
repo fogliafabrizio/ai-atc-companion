@@ -11,7 +11,7 @@ audio:
   proactive_enabled: true # set to false to disable unsolicited ATC transmissions
   input_device: null # null = system default; or device name substring
   output_device: null
-  whisper_model_size: "large-v3" # tiny / base / small / medium / large-v3
+  whisper_model_size: "large-v3" # tiny(75 MiB Disk| ~273 MB RAM) / base(142 MiB| ~388 MB) / small(466 MiB| ~852 MB) / medium(1.5 GiB| ~2.1 GB) / large-v3(2.9 GiB| ~3.9 GB) / turbo(1.6 GiB/ ~2.3 GB)
   sample_rate: 16000 # Hz — faster-whisper expects 16 kHz
   channels: 1
 
